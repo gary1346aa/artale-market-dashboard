@@ -55,15 +55,14 @@ def normalize_item_name(text: str) -> str:
     Cleans up common OCR artifacts on pixel fonts (e.g. '卷】0%' -> '卷軸10%', '℅' -> '%').
     """
     cleaned = text.replace(" ", "")
-    # Remove leading noise digits if present
+    # Strip leading non-alphanumeric / non-Chinese symbols (e.g. ':', '|', '.', '-')
+    cleaned = re.sub(r"^[^a-zA-Z0-9\u4e00-\u9fff]+", "", cleaned)
+    # Remove leading noise digits if present (e.g. icon count overlay)
     cleaned = re.sub(r"^\d+", "", cleaned)
     # Normalize percent signs
     cleaned = cleaned.replace("℅", "%").replace("c/o", "%")
-    # Common OCR misreads in MapleStory pixel font
-    cleaned = cleaned.replace("卷】", "卷軸")
-    cleaned = cleaned.replace("卷]0%", "卷軸10%")
-    cleaned = cleaned.replace("卷】0%", "卷軸10%")
-    cleaned = cleaned.replace("卷怕10%", "卷軸10%")
+    # Remove OCR bracket artifacts
+    cleaned = cleaned.replace("]", "").replace("【", "").replace("】", "")
     cleaned = cleaned.replace("防卷", "防禦卷")
     cleaned = cleaned.replace("頸", "頭")
     cleaned = cleaned.replace("頝", "頭")

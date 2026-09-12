@@ -21,6 +21,7 @@ class MarketCollector:
     POS_MARKET_TAB = (417, 72)        # Scaled to (522, 90) on 1280x720
     POS_SIDEBAR_SEARCH = (223, 261)   # Scaled to (279, 327) on 1280x720
     POS_START_SEARCH = (250, 442)     # Scaled to (312, 553) on 1280x720
+    POS_PRICE_HEADER = (756, 136)     # Scaled to (945, 170) on 1280x720 - [每個價錢]
     POS_NEXT_PAGE = (660, 112)
     POS_FIRST_PAGE = (518, 112)
 
@@ -127,9 +128,48 @@ class MarketCollector:
             self.click_ref(*self.POS_NEXT_PAGE)
             human_delay(1.0, 1.5)
 
+    def get_sort_direction(self, frame) -> str:
+        """
+        Determines if table is sorted ascending (lowest price first) or descending (highest price first).
+        Top arrow lit = descending; bottom arrow lit = ascending.
+        """
+        top_white = sum(1 for x in range(974, 982) for y in range(170, 174) if sum(frame.getpixel((x, y))) > 550)
+        bot_white = sum(1 for x in range(974, 982) for y in range(177, 181) if sum(frame.getpixel((x, y))) > 550)
+        if bot_white >= 5:
+            return "ascending"
+        elif top_white >= 5:
+            return "descending"
+        return "none"
+
+    def ensure_price_sort_ascending(self):
+        """
+        Ensures the table is sorted by lowest unit price first (ascending).
+        If not sorted or descending, clicks '每個價錢' header until the down arrow (ascending) lights up.
+        """
+        frame = self.win_mgr.capture_frame()
+        if not frame:
+            return
+        direction = self.get_sort_direction(frame)
+        logger.info(f"Current sort direction on table: '{direction}'")
+        if direction == "ascending":
+            return
+
+        # Click header once
+        logger.info("Clicking [每個價錢] header to sort by price...")
+        self.click_ref(*self.POS_PRICE_HEADER)
+        human_delay(1.0, 1.5)
+
+        frame = self.win_mgr.capture_frame()
+        direction = self.get_sort_direction(frame)
+        logger.info(f"Sort direction after click 1: '{direction}'")
+        if direction != "ascending":
+            logger.info("Toggling [每個價錢] header to ensure ASCENDING order (lowest price first)...")
+            self.click_ref(*self.POS_PRICE_HEADER)
+            human_delay(1.0, 1.5)
+
     def run_query_collection(self, keyword: str, max_pages: int = 2, check_both_tabs: bool = True):
         """
-        Performs search for a keyword and collects both active listings and trade history.
+        Performs search for a keyword, ensures price sort is ascending, and collects both active listings and trade history.
         """
         if not self.ensure_focus():
             return
@@ -140,12 +180,16 @@ class MarketCollector:
         # 2. Perform search
         self.execute_search(keyword)
 
-        # 3. Scrape Active Listings (查詢)
+        # 3. Ensure listings are sorted by lowest price first
+        self.ensure_price_sort_ascending()
+
+        # 4. Scrape Active Listings (查詢)
         self.paginate_and_scrape(max_pages=max_pages)
 
-        # 4. Scrape Matched Trades (市價)
+        # 5. Scrape Matched Trades (市價)
         if check_both_tabs:
             self.switch_to_tab("market")
+            self.ensure_price_sort_ascending()
             self.paginate_and_scrape(max_pages=max_pages)
 
     def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2):

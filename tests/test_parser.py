@@ -3,40 +3,51 @@ import io
 from pathlib import Path
 from PIL import Image
 
-# Ensure stdout handles UTF-8 cleanly on Windows
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
-
-# Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parser import MarketParser
-from src.database import init_db, save_active_listings
+from src.database import init_db, save_active_listings, save_matched_trades
 
-def main():
-    sample_img_path = Path("C:/Users/gary1/.gemini/antigravity-cli/brain/c86b3e83-edcf-492c-a4b9-3f5c42ff639b/.user_uploaded/media_1789197683302.png")
-    if not sample_img_path.exists():
-        print(f"Error: Sample image not found at {sample_img_path}")
+def test_image(image_path: Path):
+    print(f"\n==========================================")
+    print(f"Testing: {image_path.name}")
+    print(f"==========================================")
+    
+    if not image_path.exists():
+        print(f"File not found: {image_path}")
         return
 
-    print("Loading image...")
-    img = Image.open(sample_img_path)
+    img = Image.open(image_path)
     parser = MarketParser(img)
+    result = parser.parse()
 
-    quota = parser.parse_search_quota()
-    print(f"Search Quota: {quota.current_used}/{quota.max_limit}" if quota else "Search Quota: Not detected")
+    print(f"Active Tab Detected: [{result['tab'].upper()}]")
+    if result["pagination"]:
+        print(f"Pagination: Page {result['pagination'][0]} of {result['pagination'][1]}")
+    
+    print(f"\nExtracted Records ({len(result['records'])} items):")
+    for idx, r in enumerate(result["records"], 1):
+        if result["tab"] == "market":
+            print(f"  [{idx}] {r.item_name} | Qty: {r.quantity} | Matched Unit: {r.matched_unit_price:,} | Total: {r.total_matched_price:,} | Trade Time: {r.trade_time}")
+        else:
+            print(f"  [{idx}] {r.item_name} | Qty: {r.quantity} | Unit: {r.unit_price:,} | Total: {r.total_price:,} | Time: {r.remaining_time}")
 
-    pagination = parser.parse_pagination()
-    print(f"Pagination: Page {pagination[0]} of {pagination[1]}" if pagination else "Pagination: Not detected")
-
-    print("\nParsing Active Listings (查詢):")
-    listings = parser.parse_active_listings()
-    for idx, item in enumerate(listings, 1):
-        print(f"[{idx}] {item.item_name} | Qty: {item.quantity} | Total: {item.total_price:,} | Unit: {item.unit_price:,} | Time: {item.remaining_time} | Seller: {item.seller_id}")
-
-    # Test saving to database
+    # Persist to database
     init_db()
-    save_active_listings(listings)
-    print(f"\nSuccessfully stored {len(listings)} listings into SQLite database.")
+    if result["tab"] == "market":
+        save_matched_trades(result["records"])
+        print(f"-> Saved {len(result['records'])} matched trades into SQLite (table: matched_trades).")
+    else:
+        save_active_listings(result["records"])
+        print(f"-> Saved {len(result['records'])} active listings into SQLite (table: active_listings).")
+
+def main():
+    img_sell = Path("C:/Users/gary1/.gemini/antigravity-cli/brain/c86b3e83-edcf-492c-a4b9-3f5c42ff639b/.user_uploaded/media_1789197683302.png")
+    img_match = Path("C:/Users/gary1/.gemini/antigravity-cli/brain/c86b3e83-edcf-492c-a4b9-3f5c42ff639b/.user_uploaded/media_1789199276346.png")
+
+    test_image(img_sell)
+    test_image(img_match)
 
 if __name__ == "__main__":
     main()

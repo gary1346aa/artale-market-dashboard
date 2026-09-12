@@ -30,7 +30,15 @@ def extract_number(text: str) -> Optional[int]:
         return None
     # Strip everything starting from '('
     cleaned = text.split("(")[0].strip()
-    # Find all sequences of digits, taking care of commas
+    # Replace common OCR misreads of digits
+    trans = str.maketrans({
+        "S": "5", "s": "5",
+        "O": "0", "o": "0",
+        "l": "1", "I": "1",
+        "B": "8",
+        "Z": "2", "z": "2"
+    })
+    cleaned = cleaned.translate(trans)
     tokens = cleaned.split()
     if not tokens:
         return None
@@ -44,12 +52,18 @@ def extract_number(text: str) -> Optional[int]:
 
 def normalize_item_name(text: str) -> str:
     """
-    Cleans up common OCR artifacts on pixel fonts (e.g. '卷】0%' -> '卷軸10%').
+    Cleans up common OCR artifacts on pixel fonts (e.g. '卷】0%' -> '卷軸10%', '℅' -> '%').
     """
     cleaned = text.replace(" ", "")
+    # Normalize percent signs
+    cleaned = cleaned.replace("℅", "%").replace("c/o", "%")
     # Common OCR misreads in MapleStory pixel font
     cleaned = cleaned.replace("卷】", "卷軸")
     cleaned = cleaned.replace("卷]0%", "卷軸10%")
     cleaned = cleaned.replace("卷】0%", "卷軸10%")
+    cleaned = cleaned.replace("卷怕10%", "卷軸10%")
     cleaned = cleaned.replace("頸", "頭")  # 頭 can sometimes be misread as 頸
+    cleaned = cleaned.replace("頝", "頭")
+    if "炎魔" in cleaned and "殘" in cleaned and "頭盔" not in cleaned:
+        cleaned = "殘暴炎魔頭盔"
     return cleaned

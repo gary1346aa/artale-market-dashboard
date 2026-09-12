@@ -1,5 +1,6 @@
 import re
-from typing import List, Optional, Tuple
+from datetime import datetime
+from typing import List, Optional, Tuple, Dict, Any
 from PIL import Image
 from .models import ActiveListing, MatchedTrade, SearchQuota
 from .ocr_engine import preprocess_for_ocr, ocr_image, extract_number, normalize_item_name
@@ -8,6 +9,7 @@ class MarketParser:
     """
     Parser for Artale Market screenshots.
     Base reference resolution: 1024 x 576.
+    Supports both '查詢' (Active Listings) and '市價' (Matched Trades) tabs.
     """
     REF_WIDTH = 1024
     REF_HEIGHT = 576
@@ -37,14 +39,29 @@ class MarketParser:
             int(y2 * self.scale_y)
         )
 
+    def detect_active_tab(self) -> str:
+        """
+        Detects whether '查詢' (query/sell price) or '市價' (market/match price) is active.
+        Uses cyan color detection on the tab headers.
+        """
+        crop_market = self.raw_image.crop(self._scale_box(310, 60, 500, 85))
+        cyan_count = 0
+        for p in crop_market.getdata():
+            r, g, b = p[0], p[1], p[2]
+            if b > 100 and g > 100 and b > r + 30:
+                cyan_count += 1
+                
+        if cyan_count > 50:
+            return "market"
+        return "query"
+
     def parse_search_quota(self) -> Optional[SearchQuota]:
         """
-        Extracts remaining search quota (e.g. '499/500').
+        Extracts remaining search quota (e.g. '498/500').
         """
         box = self._scale_box(375, 10, 465, 32)
-        crop = self.raw_image.crop(box)
-        proc = preprocess_for_ocr(crop, scale=2.5, binarize=False)
-        text = ocr_image(proc, lang="en-US")
+        crop = self.raw_image.crop(box).resize((250, 60), Image.Resampling.LANCZOS)
+        text = ocr_image(crop, lang="en-US")
         match = re.search(r"(\d+)\s*/\s*(\d+)", text)
         if match:
             return SearchQuota(
@@ -58,9 +75,8 @@ class MarketParser:
         Extracts (current_page, total_pages) from the pagination control (e.g. '1 / 20').
         """
         box = self._scale_box(575, 95, 640, 130)
-        crop = self.raw_image.crop(box)
-        proc = preprocess_for_ocr(crop, scale=2.5, binarize=False)
-        text = ocr_image(proc, lang="en-US")
+        crop = self.raw_image.crop(box).resize((200, 70), Image.Resampling.LANCZOS)
+        text = ocr_image(crop, lang="en-US")
         match = re.search(r"(\d+)\s*/\s*(\d+)", text)
         if match:
             return (int(match.group(1)), int(match.group(2)))
@@ -77,29 +93,26 @@ class MarketParser:
         for y1, y2 in self.ROW_BOUNDS:
             # 1. Item Name
             name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
-            name_crop = self.raw_image.crop(name_box)
-            proc_name = preprocess_for_ocr(name_crop, scale=2.5, binarize=False)
-            raw_name = ocr_image(proc_name, lang="zh-Hant-TW")
+            name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
+            raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
             item_name = normalize_item_name(raw_name)
 
             if not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Cell bounds)
+            # 2. Total Price
             tot_box = self._scale_box(550, y1, 675, y2)
-            tot_crop = self.raw_image.crop(tot_box)
-            proc_tot = preprocess_for_ocr(tot_crop, scale=2.5, binarize=False)
-            tot_text = ocr_image(proc_tot, lang="en-US")
+            tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
+            tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
 
-            # 3. Unit Price (Cell bounds)
+            # 3. Unit Price
             unit_box = self._scale_box(675, y1, 790, y2)
-            unit_crop = self.raw_image.crop(unit_box)
-            proc_unit = preprocess_for_ocr(unit_crop, scale=2.5, binarize=False)
-            unit_text = ocr_image(proc_unit, lang="en-US")
+            unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
+            unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
 
-            # Fallbacks and sanity checks
+            # Fallbacks
             if unit_price is None and total_price is not None:
                 unit_price = total_price
             elif total_price is None and unit_price is not None:
@@ -108,14 +121,12 @@ class MarketParser:
             if unit_price is None or unit_price <= 0:
                 continue
 
-            # Compute quantity from total / unit
             quantity = max(1, round(total_price / unit_price)) if total_price else 1
 
             # 4. Remaining Time & Seller ID
-            meta_box = self._scale_box(805, y1, 915, y2)
-            meta_crop = self.raw_image.crop(meta_box)
-            proc_meta = preprocess_for_ocr(meta_crop, scale=2.0, binarize=False)
-            meta_text = ocr_image(proc_meta, lang="en-US")
+            meta_box = self._scale_box(795, y1, 925, y2)
+            meta_crop = self.raw_image.crop(meta_box).resize((350, 100), Image.Resampling.LANCZOS)
+            meta_text = ocr_image(meta_crop, lang="en-US")
 
             lines = [l.strip() for l in meta_text.splitlines() if l.strip()]
             remaining_time = lines[0] if len(lines) > 0 else None
@@ -137,6 +148,81 @@ class MarketParser:
         """
         Parses historical matched transaction prices from the '市價' (Market / Match Price) tab.
         """
-        # Calibrated once the layout of the 市價 tab is provided
         trades: List[MatchedTrade] = []
+
+        for y1, y2 in self.ROW_BOUNDS:
+            # 1. Item Name
+            name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
+            name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
+            raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
+            item_name = normalize_item_name(raw_name)
+
+            if not item_name or len(item_name) < 2:
+                continue
+
+            # 2. Total Price
+            tot_box = self._scale_box(550, y1, 675, y2)
+            tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
+            tot_text = ocr_image(tot_crop, lang="en-US")
+            total_price = extract_number(tot_text)
+
+            # 3. Unit Price
+            unit_box = self._scale_box(675, y1, 790, y2)
+            unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
+            unit_text = ocr_image(unit_crop, lang="en-US")
+            unit_price = extract_number(unit_text)
+
+            # Equipment or single sales show '-' for unit price
+            if unit_price is None and total_price is not None:
+                unit_price = total_price
+            elif total_price is None and unit_price is not None:
+                total_price = unit_price
+
+            if unit_price is None or unit_price <= 0:
+                continue
+
+            # Quantity estimation
+            quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
+
+            # 4. Matched Time & Trader
+            meta_box = self._scale_box(795, y1, 925, y2)
+            meta_crop = self.raw_image.crop(meta_box).resize((350, 100), Image.Resampling.LANCZOS)
+            meta_text = ocr_image(meta_crop, lang="en-US")
+
+            # Extract date time
+            time_match = re.search(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})", meta_text)
+            if time_match:
+                trade_time = time_match.group(1)
+            else:
+                short_time = re.search(r"(\d{2}:\d{2})", meta_text)
+                trade_time = f"{datetime.now().strftime('%Y-%m-%d')} {short_time.group(1)}" if short_time else None
+
+            trades.append(MatchedTrade(
+                item_name=item_name,
+                quantity=quantity,
+                matched_unit_price=unit_price,
+                total_matched_price=total_price,
+                trade_time=trade_time
+            ))
+
         return trades
+
+    def parse(self) -> Dict[str, Any]:
+        """
+        Auto-detects active tab and extracts listings or matched trades accordingly.
+        """
+        tab = self.detect_active_tab()
+        quota = self.parse_search_quota()
+        pagination = self.parse_pagination()
+
+        if tab == "market":
+            data = self.parse_matched_trades()
+        else:
+            data = self.parse_active_listings()
+
+        return {
+            "tab": tab,
+            "quota": quota,
+            "pagination": pagination,
+            "records": data
+        }

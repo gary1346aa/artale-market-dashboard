@@ -11,11 +11,17 @@ class WindowManager:
     REF_WIDTH = 1024
     REF_HEIGHT = 576
 
-    def __init__(self, title_keywords: Optional[List[str]] = None):
-        self.title_keywords = title_keywords or ["Artale", "MapleStory", "MapleStory Worlds", "MSW"]
-        self.hwnd: Optional[int] = None
+    def __init__(self, title_keywords: Optional[List[str]] = None, target_hwnd: Optional[int] = None):
+        self.title_keywords = title_keywords or [
+            "LDPlayer", "雷電", "leidian", "dnplayer",
+            "Artale", "MapleStory", "MapleStory Worlds", "MSW"
+        ]
+        self.hwnd: Optional[int] = target_hwnd
         self.sct = mss.mss()
         self._enable_dpi_awareness()
+
+    def set_hwnd(self, hwnd: int):
+        self.hwnd = hwnd
 
     def _enable_dpi_awareness(self):
         try:

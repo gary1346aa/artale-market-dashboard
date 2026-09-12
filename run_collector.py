@@ -9,6 +9,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from src.collector import MarketCollector
 from src.passive_monitor import PassiveMarketMonitor
+from src.window_manager import WindowManager
+from src.window_selector import WindowSelector
 
 def main():
     parser = argparse.ArgumentParser(
@@ -16,15 +18,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python run_collector.py --mode passive
-    Runs in passive mode (Zero botting risk). Press [F9] to capture active view, or [F10] to auto-record.
+  # Interactively choose the LDPlayer / Artale window from a list:
+  python run_collector.py --select-window --mode auto --query "墜飾幸運卷軸30%"
 
-  python run_collector.py --mode auto --query "頭盔"
-    Focuses Artale window, searches for '頭盔', collects active listings and match prices across 2 pages.
-
-  python run_collector.py --mode auto --watchlist items_watchlist.json --pages 2
-    Iterates through the entire watchlist, collecting both sell orders and completed trades.
+  # Run in passive mode:
+  python run_collector.py --select-window --mode passive
         """
+    )
+    parser.add_argument(
+        "--select-window",
+        action="store_true",
+        help="Display an interactive list of all open windows/emulators to pick the exact game window"
     )
     parser.add_argument(
         "--mode",
@@ -53,11 +57,20 @@ Examples:
 
     args = parser.parse_args()
 
+    # Determine target window manager
+    target_win_mgr = None
+    if args.select_window:
+        selected = WindowSelector.prompt_selection(keywords=["LDPlayer", "雷電", "dnplayer", "leidian", "Artale", "MapleStory"])
+        if not selected:
+            print("No window selected. Exiting.")
+            return
+        target_win_mgr = WindowManager(target_hwnd=selected["hwnd"])
+
     if args.mode == "passive":
-        monitor = PassiveMarketMonitor()
+        monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
         monitor.start_listener()
     else:
-        collector = MarketCollector()
+        collector = MarketCollector(window_mgr=target_win_mgr)
         if args.query:
             collector.run_query_collection(args.query, max_pages=args.pages, check_both_tabs=True)
         else:

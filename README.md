@@ -17,7 +17,30 @@ A market monitoring, OCR extraction, and price analytics pipeline for **MapleSto
    - SQLite / PostgreSQL time-series schema.
    - Volume-Weighted Average Price (VWAP), Simple Moving Averages (SMA), and anomaly / mispricing detection.
 
-## Directory Structure
+## Running Data Collection
+
+The system supports two collection modes:
+
+### 1. Passive Mode (Zero Anti-Cheat Risk, Recommended)
+Run in the background while you play or browse the Artale market manually:
+```bash
+python run_collector.py --mode passive
+```
+- **`[F9]`**: Press anytime to capture the active market page (auto-detects `[查詢]` vs `[市價]` tab and saves all rows to SQLite).
+- **`[F10]`**: Toggle continuous background watcher (records whenever you browse pages).
+
+### 2. Auto Collection Mode
+Navigates the market UI, types search queries, flips pages, and captures both tabs:
+```bash
+# Single search item
+python run_collector.py --mode auto --query "頭盔" --pages 2
+
+# Full catalog scan using watchlist
+python run_collector.py --mode auto --watchlist items_watchlist.json --pages 2
+```
+
+> [!NOTE]
+> Moving your mouse quickly to any corner of the screen triggers the PyAutoGUI emergency fail-safe and immediately stops the automated collector.
 
 ```
 artale_market_tracker/

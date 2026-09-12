@@ -30,14 +30,14 @@ def set_clipboard_text(text: str) -> bool:
             time.sleep(0.05)
     return False
 
-def clear_and_paste(box_x: int, box_y: int, text: str):
+def clear_and_paste(box_x: int, box_y: int, text: str, confirm_pt=None):
     """
     1. Clicks search box (activates LDPlayer input bar).
     2. Sends backspaces to wipe any existing content.
     3. Sets clipboard to UTF-16 Traditional Chinese text.
     4. Pastes via Ctrl+V.
     5. Sends 1 Backspace to remove LDPlayer's trailing phantom character.
-    6. Sends Enter to commit input bar.
+    6. Sends Enter and clicks 確定 (Confirm) to commit input bar.
     7. Sends Enter again to execute game search.
     """
     # 1. Click search input box
@@ -45,7 +45,7 @@ def clear_and_paste(box_x: int, box_y: int, text: str):
     time.sleep(0.4)
 
     # 2. Clear input bar thoroughly
-    for _ in range(40):
+    for _ in range(50):
         pyautogui.press("backspace")
         time.sleep(0.01)
     time.sleep(0.1)
@@ -62,9 +62,12 @@ def clear_and_paste(box_x: int, box_y: int, text: str):
     pyautogui.press("backspace")
     time.sleep(0.2)
 
-    # 6. Commit input bar
+    # 6. Commit input bar via Enter and confirm button
     pyautogui.press("enter")
-    time.sleep(0.4)
+    time.sleep(0.3)
+    if confirm_pt:
+        human_click(confirm_pt[0], confirm_pt[1])
+        time.sleep(0.5)
 
     # 7. Press Enter in game to submit search
     pyautogui.press("enter")

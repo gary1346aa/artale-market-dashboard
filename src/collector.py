@@ -15,8 +15,8 @@ class MarketCollector:
     Automates market scanning, tab navigation, OCR data collection, and DB persistence.
     Calibrated against Artale 1280x720 inner canvas (1024x576 reference coordinates).
     """
-    # Exact calibrated reference coordinates (1024 x 576 base)
-    POS_QUICK_SEARCH = (240, 30)      # Scaled to (300, 37) on 1280x720
+    POS_QUICK_SEARCH = (344, 30)      # Scaled to (430, 37) on 1280x720 (right end of search box)
+    POS_CONFIRM_INPUT = (948, 548)    # Scaled to (1185, 685) on 1280x720 - [確定] button
     POS_QUERY_TAB = (195, 72)         # Scaled to (244, 90) on 1280x720
     POS_MARKET_TAB = (417, 72)        # Scaled to (522, 90) on 1280x720
     POS_SIDEBAR_SEARCH = (223, 261)   # Scaled to (279, 327) on 1280x720
@@ -64,11 +64,12 @@ class MarketCollector:
         """
         logger.info(f"Searching for item: '{keyword}'")
         search_pt = self.win_mgr.to_screen_coords(*self.POS_QUICK_SEARCH)
+        confirm_pt = self.win_mgr.to_screen_coords(*self.POS_CONFIRM_INPUT)
         if not search_pt:
             return False
 
-        # Clear, paste Traditional Chinese without trailing character, and press Enter
-        clear_and_paste(search_pt[0], search_pt[1], keyword)
+        # Clear, paste Traditional Chinese without trailing character, click 確定, and press Enter
+        clear_and_paste(search_pt[0], search_pt[1], keyword, confirm_pt=confirm_pt)
         human_delay(1.5, 2.0)
         return True
 

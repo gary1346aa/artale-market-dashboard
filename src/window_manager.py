@@ -13,7 +13,7 @@ class WindowManager:
 
     def __init__(self, title_keywords: Optional[List[str]] = None, target_hwnd: Optional[int] = None):
         self.title_keywords = title_keywords or [
-            "LDPlayer", "雷電", "leidian", "dnplayer",
+            "祈禱機", "LDPlayer", "雷電", "leidian", "dnplayer",
             "Artale", "MapleStory", "MapleStory Worlds", "MSW"
         ]
         self.hwnd: Optional[int] = target_hwnd
@@ -63,32 +63,35 @@ class WindowManager:
     def get_window_rect(self) -> Optional[Dict[str, int]]:
         """
         Gets client bounding box (left, top, width, height) of the targeted window.
+        Accounts for LDPlayer's 51px top title bar and 57px right toolbar.
         """
         if not self.hwnd and not self.find_window():
             return None
 
         rect = ctypes.wintypes.RECT()
-        # Use GetClientRect + ClientToScreen to avoid capturing window frame borders
-        ctypes.windll.user32.GetClientRect(self.hwnd, ctypes.byref(rect))
-        point = ctypes.wintypes.POINT(rect.left, rect.top)
-        ctypes.windll.user32.ClientToScreen(self.hwnd, ctypes.byref(point))
-
+        ctypes.windll.user32.GetWindowRect(self.hwnd, ctypes.byref(rect))
         w = rect.right - rect.left
         h = rect.bottom - rect.top
 
-        if w <= 0 or h <= 0:
-            # Fallback to standard GetWindowRect
-            ctypes.windll.user32.GetWindowRect(self.hwnd, ctypes.byref(rect))
+        # LDPlayer emulator detection (standard LD9 window has title bar ~51px and toolbar ~57px)
+        if h >= 740 or w >= 1300:
+            top_bar_offset = 51
+            game_w = 1280
+            game_h = 720
             return {
                 "left": rect.left,
-                "top": rect.top,
-                "width": rect.right - rect.left,
-                "height": rect.bottom - rect.top
+                "top": rect.top + top_bar_offset,
+                "width": game_w,
+                "height": game_h,
+                "raw_left": rect.left,
+                "raw_top": rect.top,
+                "raw_width": w,
+                "raw_height": h
             }
 
         return {
-            "left": point.x,
-            "top": point.y,
+            "left": rect.left,
+            "top": rect.top,
             "width": w,
             "height": h
         }
@@ -100,7 +103,6 @@ class WindowManager:
         if not self.hwnd and not self.find_window():
             return False
 
-        # SW_RESTORE = 9
         ctypes.windll.user32.ShowWindow(self.hwnd, 9)
         ctypes.windll.user32.SetForegroundWindow(self.hwnd)
         return True
@@ -108,6 +110,7 @@ class WindowManager:
     def to_screen_coords(self, ref_x: int, ref_y: int) -> Optional[Tuple[int, int]]:
         """
         Converts reference coordinates (1024x576 space) into actual desktop screen coordinates.
+        Scales precisely onto the inner 1280x720 game canvas.
         """
         bounds = self.get_window_rect()
         if not bounds:

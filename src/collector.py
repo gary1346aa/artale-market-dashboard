@@ -1,10 +1,11 @@
 import logging
 import time
+import os
 from typing import List, Optional
 from .window_manager import WindowManager
 from .parser import MarketParser
 from .database import init_db, save_active_listings, save_matched_trades
-from .actions import human_click, human_delay, paste_text, clear_input, press_enter
+from .actions import human_click, human_delay, clear_and_paste
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ArtaleCollector")
@@ -12,11 +13,14 @@ logger = logging.getLogger("ArtaleCollector")
 class MarketCollector:
     """
     Automates market scanning, tab navigation, OCR data collection, and DB persistence.
+    Calibrated against Artale 1280x720 inner canvas (1024x576 reference coordinates).
     """
-    # Reference coordinates (1024 x 576 base)
-    POS_QUICK_SEARCH = (272, 46)
-    POS_QUERY_TAB = (195, 120)
-    POS_MARKET_TAB = (400, 120)
+    # Exact calibrated reference coordinates (1024 x 576 base)
+    POS_QUICK_SEARCH = (240, 30)      # Scaled to (300, 37) on 1280x720
+    POS_QUERY_TAB = (195, 72)         # Scaled to (244, 90) on 1280x720
+    POS_MARKET_TAB = (417, 72)        # Scaled to (522, 90) on 1280x720
+    POS_SIDEBAR_SEARCH = (223, 261)   # Scaled to (279, 327) on 1280x720
+    POS_START_SEARCH = (250, 442)     # Scaled to (312, 553) on 1280x720
     POS_NEXT_PAGE = (660, 112)
     POS_FIRST_PAGE = (518, 112)
 
@@ -29,7 +33,7 @@ class MarketCollector:
             logger.error("Could not find Artale / MapleStory Worlds game window. Please ensure the game is running.")
             return False
         self.win_mgr.bring_to_front()
-        time.sleep(0.3)
+        time.sleep(0.5)
         return True
 
     def click_ref(self, ref_x: int, ref_y: int):
@@ -43,16 +47,6 @@ class MarketCollector:
         """
         Switches to 'query' (查詢) or 'market' (市價) tab.
         """
-        frame = self.win_mgr.capture_frame()
-        if not frame:
-            return False
-            
-        parser = MarketParser(frame)
-        current_tab = parser.detect_active_tab()
-        
-        if current_tab == target_tab:
-            return True
-            
         if target_tab == "query":
             logger.info("Switching to [查詢] (Active Listings) tab...")
             self.click_ref(*self.POS_QUERY_TAB)
@@ -60,21 +54,21 @@ class MarketCollector:
             logger.info("Switching to [市價] (Market Trades) tab...")
             self.click_ref(*self.POS_MARKET_TAB)
             
-        human_delay(0.8, 1.2)
+        human_delay(1.0, 1.5)
         return True
 
     def execute_search(self, keyword: str) -> bool:
         """
-        Inputs keyword into the quick search box and submits.
+        Inputs keyword into the quick search box and submits via Enter cleanly.
         """
         logger.info(f"Searching for item: '{keyword}'")
-        self.click_ref(*self.POS_QUICK_SEARCH)
-        human_delay(0.2, 0.4)
-        clear_input()
-        paste_text(keyword)
-        human_delay(0.2, 0.3)
-        press_enter()
-        human_delay(1.0, 1.6)
+        search_pt = self.win_mgr.to_screen_coords(*self.POS_QUICK_SEARCH)
+        if not search_pt:
+            return False
+
+        # Clear, paste Traditional Chinese without trailing character, and press Enter
+        clear_and_paste(search_pt[0], search_pt[1], keyword)
+        human_delay(1.5, 2.0)
         return True
 
     def scrape_current_page(self) -> dict:
@@ -85,6 +79,13 @@ class MarketCollector:
         if not frame:
             logger.warning("Frame capture returned empty.")
             return {"tab": "unknown", "count": 0}
+
+        # Save last captured frame for verification
+        try:
+            os.makedirs("data", exist_ok=True)
+            frame.save("data/last_captured_frame.png")
+        except Exception:
+            pass
 
         parser = MarketParser(frame)
         res = parser.parse()
@@ -124,22 +125,25 @@ class MarketCollector:
             # Click next page
             logger.info("Clicking next page button...")
             self.click_ref(*self.POS_NEXT_PAGE)
-            human_delay(0.9, 1.4)
+            human_delay(1.0, 1.5)
 
-    def run_query_collection(self, keyword: str, max_pages: int = 3, check_both_tabs: bool = True):
+    def run_query_collection(self, keyword: str, max_pages: int = 2, check_both_tabs: bool = True):
         """
         Performs search for a keyword and collects both active listings and trade history.
         """
         if not self.ensure_focus():
             return
 
+        # 1. Always switch to 查詢 tab first
+        self.switch_to_tab("query")
+        
+        # 2. Perform search
         self.execute_search(keyword)
 
-        # 1. Scrape Active Listings (查詢)
-        self.switch_to_tab("query")
+        # 3. Scrape Active Listings (查詢)
         self.paginate_and_scrape(max_pages=max_pages)
 
-        # 2. Scrape Matched Trades (市價)
+        # 4. Scrape Matched Trades (市價)
         if check_both_tabs:
             self.switch_to_tab("market")
             self.paginate_and_scrape(max_pages=max_pages)

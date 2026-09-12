@@ -20,7 +20,7 @@ def format_meso(val: int) -> str:
         return f"{val:,} ({wan}萬{rem:,})" if rem else f"{val:,} ({wan}萬)"
     return f"{val:,}"
 
-def query_market(keyword: str = ""):
+def show_category_matrix():
     if not DB_PATH.exists():
         print(f"Error: Database file not found at {DB_PATH}")
         return
@@ -28,10 +28,80 @@ def query_market(keyword: str = ""):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    query_filter = f"%{keyword}%" if keyword else "%"
+    categories = [
+        ("墜飾 (Pendant Scrolls)", "%墜飾%卷軸%"),
+        ("眼部裝飾 (Eye Accessory Scrolls)", "%眼部%卷軸%"),
+        ("臉部裝飾 (Face Accessory Scrolls)", "%臉部%卷軸%"),
+        ("頭盔 (Helmet Scrolls)", "%頭盔%卷軸%")
+    ]
+
+    print("=" * 86)
+    print("  ARTALE MARKET OVERVIEW: TARGET SCROLLS MATRIX")
+    print("=" * 86)
+
+    for cat_title, cat_pattern in categories:
+        print(f"\n--- {cat_title} ---")
+        c.execute("""
+            SELECT item_name, MIN(unit_price) as min_ask, COUNT(*) as active_count
+            FROM active_listings
+            WHERE item_name LIKE ?
+            GROUP BY item_name
+            ORDER BY min_ask ASC
+        """, (cat_pattern,))
+        active_data = {r[0]: (r[1], r[2]) for r in c.fetchall()}
+
+        c.execute("""
+            SELECT item_name, matched_unit_price, trade_time
+            FROM matched_trades
+            WHERE item_name LIKE ?
+            ORDER BY trade_time DESC
+        """, (cat_pattern,))
+        trade_data = {}
+        for r in c.fetchall():
+            if r[0] not in trade_data:
+                trade_data[r[0]] = (r[1], r[2])
+
+        all_items = sorted(set(list(active_data.keys()) + list(trade_data.keys())))
+        if not all_items:
+            print("  (No tracked items in database yet for this category)")
+            continue
+
+        print(f"  {'Item Name':<22}  {'Lowest Ask (查詢)':>20}  {'Latest Trade (市價)':>20}  {'Spread':>14}")
+        print("  " + "-" * 82)
+        for item in all_items:
+            ask_val, ask_cnt = active_data.get(item, (None, 0))
+            trade_val, trade_tm = trade_data.get(item, (None, ""))
+
+            ask_str = format_meso(ask_val) if ask_val else "No asks"
+            trade_str = format_meso(trade_val) if trade_val else "No trades"
+
+            spread_str = "-"
+            if ask_val and trade_val:
+                diff = ask_val - trade_val
+                pct = (diff / trade_val) * 100
+                spread_str = f"{pct:+.1f}%"
+
+            print(f"  {item:<22}  {ask_str:>20}  {trade_str:>20}  {spread_str:>14}")
+
+    print("\n" + "=" * 86)
+    conn.close()
+
+def query_market(keyword: str = ""):
+    if not keyword:
+        show_category_matrix()
+        return
+
+    if not DB_PATH.exists():
+        print(f"Error: Database file not found at {DB_PATH}")
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    query_filter = f"%{keyword}%"
 
     print("=" * 78)
-    print(f"  ARTALE MARKET REPORT: '{keyword or 'ALL ITEMS'}'")
+    print(f"  ARTALE MARKET REPORT: '{keyword}'")
     print("=" * 78)
 
     # 1. Active Listings (查詢)

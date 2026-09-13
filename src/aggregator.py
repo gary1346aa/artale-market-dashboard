@@ -83,7 +83,7 @@ class KlineAggregator:
             # Fetch lowest active ask for context
             cursor.execute("""
                 SELECT min(unit_price) FROM active_listings
-                WHERE item_name = ? AND unit_price > 0
+                WHERE item_name = ? AND unit_price >= 500
             """, (item_name,))
             lowest_ask_row = cursor.fetchone()
             current_lowest_ask = lowest_ask_row[0] if lowest_ask_row and lowest_ask_row[0] else None

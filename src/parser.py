@@ -130,7 +130,25 @@ class MarketParser:
             if unit_price is None or unit_price <= 0:
                 continue
 
-            quantity = max(1, round(total_price / unit_price)) if total_price else 1
+            # In Artale, minimum auction price is 500 mesos.
+            # If unit_price < 500 but total_price >= 500, OCR swapped or misread quantity as unit_price.
+            if unit_price < 500:
+                if total_price and total_price >= 500 and unit_price > 0:
+                    quantity = unit_price
+                    unit_price = round(total_price / quantity)
+                else:
+                    continue  # Invalid listing noise
+
+            quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
+
+            # Scrolls and equipment category guard
+            if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指"]):
+                if quantity > 20:
+                    unit_price = total_price
+                    quantity = 1
+
+            if unit_price < 500:
+                continue
 
             # 4. Remaining Time & Seller ID
             meta_box = self._scale_box(795, y1, 925, y2)

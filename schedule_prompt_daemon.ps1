@@ -31,40 +31,147 @@ function Get-NextStandardTarget([datetime]$baseTime) {
     return $candidates[0]
 }
 
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+
 function Show-PromptDialog([string]$promptTimeStr) {
-    $title = 'Artale Market Tracker - Scheduled Collection'
-    $lines = @(
-        '[Artale Market Tracker - Scheduled Update]',
-        '',
-        "It is now the scheduled collection time ($promptTimeStr).",
-        'Please choose how you want to collect auction data:',
-        '',
-        '  [Yes]    Full Update (Both: Asks + Trades)  [~5-6 mins]',
-        '           Updates K-Lines, Lowest Asks, and Spreads',
-        '',
-        '  [No]     Fast Update (Trades Only)          [~2.5 mins]',
-        '           Fastest scan, updates K-Line candlestick charts only',
-        '',
-        '  [Cancel] Postpone 30 Minutes',
-        '           (I am currently using the PC, ask again later)'
-    )
-    $text = $lines -join [Environment]::NewLine
+    try {
+        [xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Artale Market Tracker - Scheduled Collection"
+        Height="430" Width="540"
+        WindowStartupLocation="CenterScreen"
+        Topmost="True" ResizeMode="NoResize"
+        Background="#F3F4F6" FontFamily="Segoe UI">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="12"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
-    $res = [System.Windows.Forms.MessageBox]::Show(
-        $text,
-        $title,
-        [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
-        [System.Windows.Forms.MessageBoxIcon]::Question,
-        [System.Windows.Forms.MessageBoxDefaultButton]::Button1,
-        [System.Windows.Forms.MessageBoxOptions]::ServiceNotification
-    )
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Artale Market Tracker - Scheduled Update" FontSize="16" FontWeight="Bold" Foreground="#111827"/>
+            <TextBlock Text="Scheduled time ($promptTimeStr) reached. Target watchlist: 84 items." FontSize="12" Foreground="#4B5563" Margin="0,2,0,0"/>
+            <TextBlock Text="Please choose an option to proceed (or press A / B / C / D):" FontSize="13" Foreground="#1F2937" Margin="0,6,0,0"/>
+        </StackPanel>
 
-    if ($res -eq [System.Windows.Forms.DialogResult]::Yes) {
-        return 'both'
-    } elseif ($res -eq [System.Windows.Forms.DialogResult]::No) {
-        return 'trades'
-    } else {
-        return 'postpone'
+        <StackPanel Grid.Row="2">
+            <!-- Button A: Ask -->
+            <Button Name="BtnA" Height="50" Margin="0,0,0,8" Background="#2563EB" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,5,12,5">
+                    <TextBlock Text="[A]  Ask Only (Active Listings)      [ETA: ~10-12 mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="Scans active listings only. Updates Lowest Asks &amp; Spreads." FontSize="11" Opacity="0.9"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Button B: Trade -->
+            <Button Name="BtnB" Height="50" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,5,12,5">
+                    <TextBlock Text="[B]  Trade Only (Matched Trades)     [ETA: ~10-12 mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="Scans matched trades only. Updates K-Line candlestick charts." FontSize="11" Opacity="0.9"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Button C: Both -->
+            <Button Name="BtnC" Height="50" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,5,12,5">
+                    <TextBlock Text="[C]  Both (Ask + Trade)              [ETA: ~20-25 mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="Full update: scans both tabs. Updates K-Lines, Lowest Asks, and Spreads." FontSize="11" Opacity="0.9"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Button D: Cancel -->
+            <Button Name="BtnD" Height="38" Background="#E5E7EB" Foreground="#1F2937" BorderThickness="1" BorderBrush="#D1D5DB" Cursor="Hand">
+                <TextBlock Text="[D]  Cancel (Ask Again in 30 Mins)   [I am currently using the PC]" FontWeight="SemiBold" FontSize="12"/>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
+"@
+        $reader = (New-Object System.Xml.XmlNodeReader $xaml)
+        $window = [System.Windows.Markup.XamlReader]::Load($reader)
+
+        $script:dialogChoice = "postpone"
+
+        $btnA = $window.FindName("BtnA")
+        $btnB = $window.FindName("BtnB")
+        $btnC = $window.FindName("BtnC")
+        $btnD = $window.FindName("BtnD")
+
+        $btnA.Add_Click({
+            $script:dialogChoice = "asks"
+            $window.Close()
+        })
+
+        $btnB.Add_Click({
+            $script:dialogChoice = "trades"
+            $window.Close()
+        })
+
+        $btnC.Add_Click({
+            $script:dialogChoice = "both"
+            $window.Close()
+        })
+
+        $btnD.Add_Click({
+            $script:dialogChoice = "postpone"
+            $window.Close()
+        })
+
+        $window.Add_KeyDown({
+            param($sender, $e)
+            if ($e.Key -eq [System.Windows.Input.Key]::A) {
+                $script:dialogChoice = "asks"
+                $window.Close()
+            } elseif ($e.Key -eq [System.Windows.Input.Key]::B) {
+                $script:dialogChoice = "trades"
+                $window.Close()
+            } elseif ($e.Key -eq [System.Windows.Input.Key]::C) {
+                $script:dialogChoice = "both"
+                $window.Close()
+            } elseif ($e.Key -eq [System.Windows.Input.Key]::Escape -or $e.Key -eq [System.Windows.Input.Key]::D) {
+                $script:dialogChoice = "postpone"
+                $window.Close()
+            }
+        })
+
+        $null = $window.ShowDialog()
+        return $script:dialogChoice
+    } catch {
+        # Fallback to MessageBox if WPF fails
+        $title = 'Artale Market Tracker - Scheduled Collection'
+        $lines = @(
+            '[Artale Market Tracker - Scheduled Update]',
+            '',
+            "It is now the scheduled collection time ($promptTimeStr).",
+            'Target watchlist: 84 items. Please choose an option:',
+            '',
+            '  [Yes]    [C] Both (Ask + Trade)          [~20-25 mins]',
+            '           Updates K-Lines, Lowest Asks, and Spreads',
+            '',
+            '  [No]     [B] Trade Only (Matched Trades) [~10-12 mins]',
+            '           Updates K-Line candlestick charts only',
+            '',
+            '  [Cancel] [D] Postpone 30 Minutes',
+            '           (I am currently using the PC, ask again later)'
+        )
+        $text = $lines -join [Environment]::NewLine
+
+        $res = [System.Windows.Forms.MessageBox]::Show(
+            $text,
+            $title,
+            [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
+            [System.Windows.Forms.MessageBoxIcon]::Question,
+            [System.Windows.Forms.MessageBoxDefaultButton]::Button1,
+            [System.Windows.Forms.MessageBoxOptions]::ServiceNotification
+        )
+
+        if ($res -eq [System.Windows.Forms.DialogResult]::Yes) { return 'both' }
+        elseif ($res -eq [System.Windows.Forms.DialogResult]::No) { return 'trades' }
+        else { return 'postpone' }
     }
 }
 
@@ -104,7 +211,7 @@ while ($true) {
 
         $choice = Show-PromptDialog $promptTimeStr
 
-        if ($choice -in @('both', 'trades')) {
+        if ($choice -in @('both', 'trades', 'asks')) {
             Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 in visible terminal..."
             try {
                 Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab $choice" -Wait

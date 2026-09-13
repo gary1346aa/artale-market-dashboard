@@ -5,17 +5,28 @@ echo =======================================================
 echo    Artale Market Tracker - Manual Collection Run
 echo =======================================================
 echo.
-echo Select collection mode:
-echo   [1] Full Update (Both: Asks + Trades) (~5-6 mins) [Default]
-echo   [2] Fast Update (Trades Only)         (~2.5 mins)
+echo Target Watchlist: 84 items
 echo.
-set /p mode="Enter choice [1 or 2, default=1]: "
+echo Select collection mode:
+echo   [A] Ask Only (Active Listings)   [ETA: ~10-12 mins]
+echo   [B] Trade Only (Matched Trades)  [ETA: ~10-12 mins]
+echo   [C] Both (Ask + Trade)           [ETA: ~20-25 mins] [Default]
+echo   [D] Cancel
+echo.
+set /p mode="Enter choice [A, B, C, or D, default=C]: "
 
-if "%mode%"=="2" (
-    echo [Artale Tracker] Starting Fast Update (Trades Only)...
+if /i "%mode%"=="D" (
+    echo [Artale Tracker] Operation cancelled by user.
+    exit /b
+)
+if /i "%mode%"=="A" (
+    echo [Artale Tracker] Starting Ask Only Collection (Active Listings)...
+    powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab asks
+) else if /i "%mode%"=="B" (
+    echo [Artale Tracker] Starting Trade Only Collection (Matched Trades)...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab trades
 ) else (
-    echo [Artale Tracker] Starting Full Update (Both: Asks + Trades)...
+    echo [Artale Tracker] Starting Full Collection (Both: Asks + Trades)...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both
 )
 

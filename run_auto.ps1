@@ -36,33 +36,48 @@ if ($Script -ne "") {
 }
 
 $instLabel = if ($Instance -ne "") { " [Instance: $Instance]" } else { " [Instance: Auto-Rotate]" }
-"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel..." | Out-File $logFile -Encoding utf8
+$startMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel..."
+Write-Host $startMsg -ForegroundColor Cyan
+$startMsg | Out-File $logFile -Append -Encoding utf8
 
 $extraArgs = @()
 if ($Instance -ne "") {
     $extraArgs += @("--instance", $Instance)
 }
 
+$env:PYTHONUNBUFFERED = "1"
+
 if ($Query -ne "") {
-    & $python run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs *>> $logFile
+    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
 } else {
-    & $python run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs *>> $logFile
+    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
 }
 
-"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Collector completed with exit code $LASTEXITCODE. Running aggregator..." | Out-File $logFile -Append -Encoding utf8
-& $python -m src.aggregator *>> $logFile
-"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Updating dashboard.html..." | Out-File $logFile -Append -Encoding utf8
-& $python dashboard.py *>> $logFile
+$aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."
+Write-Host $aggMsg -ForegroundColor Cyan
+$aggMsg | Out-File $logFile -Append -Encoding utf8
+& $python -u -m src.aggregator 2>&1 | Tee-Object -FilePath $logFile -Append
+
+$dashMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Updating dashboard.html and docs/index.html..."
+Write-Host $dashMsg -ForegroundColor Cyan
+$dashMsg | Out-File $logFile -Append -Encoding utf8
+& $python -u dashboard.py 2>&1 | Tee-Object -FilePath $logFile -Append
 
 # Automated GitHub Pages sync (if git remote origin is configured)
 $hasRemote = git remote 2>$null
 if ($hasRemote -contains "origin") {
-    "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') Syncing docs/index.html to GitHub Pages..." | Out-File $logFile -Append -Encoding utf8
-    git add docs/index.html *>> $logFile
-    git commit -m "Auto-update market dashboard: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" *>> $logFile
-    git push origin master *>> $logFile
+    $syncMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Syncing docs/index.html to GitHub Pages..."
+    Write-Host $syncMsg -ForegroundColor Green
+    $syncMsg | Out-File $logFile -Append -Encoding utf8
+    git add docs/index.html 2>&1 | Tee-Object -FilePath $logFile -Append
+    git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))" 2>&1 | Tee-Object -FilePath $logFile -Append
+    git push origin master 2>&1 | Tee-Object -FilePath $logFile -Append
 } else {
-    "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') GitHub remote not yet configured; docs/index.html generated locally." | Out-File $logFile -Append -Encoding utf8
+    $localMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] GitHub remote not configured; generated locally."
+    Write-Host $localMsg -ForegroundColor Yellow
+    $localMsg | Out-File $logFile -Append -Encoding utf8
 }
 
-"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') All tasks finished." | Out-File $logFile -Append -Encoding utf8
+$finishMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] All tasks finished successfully!"
+Write-Host $finishMsg -ForegroundColor Green
+$finishMsg | Out-File $logFile -Append -Encoding utf8

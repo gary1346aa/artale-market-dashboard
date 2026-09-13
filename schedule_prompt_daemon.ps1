@@ -90,7 +90,7 @@ while ($true) {
         if ($res -eq [System.Windows.Forms.DialogResult]::Yes) {
             Write-Log '使用者點選 [是]！正在啟動 run_auto.ps1 執行拍賣場採集與同步...'
             try {
-                & powershell.exe -ExecutionPolicy Bypass -File "$workDir\run_auto.ps1"
+                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`"" -Wait
                 Write-Log '採集與 GitHub Pages 同步流程執行完畢！'
                 Show-Toast '拍賣場行情採集與 GitHub Pages 同步已順利完成！'
             } catch {

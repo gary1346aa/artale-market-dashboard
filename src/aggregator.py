@@ -88,69 +88,91 @@ class KlineAggregator:
             lowest_ask_row = cursor.fetchone()
             current_lowest_ask = lowest_ask_row[0] if lowest_ask_row and lowest_ask_row[0] else None
 
-            # Calculate baseline median unit price for outlier / bundle detection
-            all_prices = sorted([r[1] for r in rows if r[1] and r[1] >= 10000])
-            global_med = all_prices[len(all_prices) // 2] if all_prices else 0
-
-            # Calculate day-level medians so price trends over the week aren't falsely cut
-            from collections import defaultdict
-            day_prices = defaultdict(list)
-            for r in rows:
-                d = (r[3] or r[4] or "")[:10]
-                if r[1] and r[1] >= 10000:
-                    day_prices[d].append(r[1])
-            day_medians = {}
-            for d, pts in day_prices.items():
-                day_medians[d] = sorted(pts)[len(pts) // 2] if len(pts) >= 3 else global_med
-
-            # Bucket trades
-            buckets: Dict[str, List[Dict]] = {}
+            # Deduplicate multiple captures of identical trades and sort chronologically
+            seen_trades = set()
+            parsed_trades = []
             for r in rows:
                 qty = r[0]
                 unit_price = r[1]
                 if not unit_price or unit_price < 1000:
                     continue
-
+                total_price = r[2] or (qty * unit_price)
                 raw_time = r[3] or ""
                 cap_time = r[4] or ""
-                trade_day = (raw_time or cap_time)[:10]
-                median_p = day_medians.get(trade_day, global_med)
 
-                # 1. Low Threshold Filter (< 70% median):
-                # Catches RMT token meso, cash-settled transfers, and extreme dumping
-                if median_p > 500000 and unit_price < median_p * 0.70:
+                # Trade deduplication key
+                trade_key = (raw_time, qty, unit_price, total_price)
+                if trade_key in seen_trades:
+                    continue
+                seen_trades.add(trade_key)
+
+                trade_dt = self.parse_trade_datetime(raw_time, cap_time)
+                parsed_trades.append({
+                    "dt": trade_dt,
+                    "unit_price": unit_price,
+                    "quantity": qty,
+                    "total_price": total_price,
+                    "raw_time": raw_time,
+                    "cap_time": cap_time
+                })
+
+            parsed_trades.sort(key=lambda x: x["dt"])
+
+            # Global median baseline
+            all_prices = sorted([t["unit_price"] for t in parsed_trades if t["unit_price"] >= 10000])
+            global_med = all_prices[len(all_prices) // 2] if all_prices else 0
+
+            # Bucket trades with Rolling Local Median outlier filter
+            buckets: Dict[str, List[Dict]] = {}
+            total_trades = len(parsed_trades)
+
+            for i, t in enumerate(parsed_trades):
+                unit_price = t["unit_price"]
+                qty = t["quantity"]
+                trade_dt = t["dt"]
+
+                # Determine reference median (rolling window of 11 trades centered at i)
+                if total_trades >= 5:
+                    win = [
+                        parsed_trades[j]["unit_price"]
+                        for j in range(max(0, i - 5), min(total_trades, i + 6))
+                        if j != i and parsed_trades[j]["unit_price"] >= 10000
+                    ]
+                    median_p = sorted(win)[len(win) // 2] if len(win) >= 3 else global_med
+                    low_threshold = 0.80
+                    high_threshold = 1.30
+                else:
+                    median_p = global_med
+                    low_threshold = 0.60
+                    high_threshold = 1.60
+
+                # 1. Low outlier filter (RMT token meso, cash-settled trades, dump spikes)
+                if median_p > 100000 and unit_price < median_p * low_threshold:
                     continue
 
-                # 2. Upper Bound Filter (> 150% median):
-                # Check for legitimate multi-pack bundle, otherwise omit extreme spikes
-                if median_p > 0 and unit_price > median_p * 1.50:
+                # 2. High outlier filter & Multi-pack Bundle normalizer
+                if median_p > 100000 and unit_price > median_p * high_threshold:
                     ratio = round(unit_price / median_p)
                     if 2 <= ratio <= 15:
                         norm_p = round(unit_price / ratio)
-                        if 0.70 * median_p <= norm_p <= 1.50 * median_p:
-                            # Legitimate multi-item bundle: normalize unit price and scale volume
+                        if (low_threshold * median_p) <= norm_p <= (high_threshold * median_p):
+                            # Legitimate multi-pack bundle: normalize unit price and scale volume
                             unit_price = norm_p
                             qty = max(qty, ratio)
                         else:
                             continue
                     else:
-                        # Non-bundle extreme outlier / spike (> 150% median): omit from candles
                         continue
 
-                total_price = r[2] or (qty * unit_price)
-                raw_time = r[3] or ""
-                cap_time = r[4] or ""
-
-                trade_dt = self.parse_trade_datetime(raw_time, cap_time)
                 bucket_key = self.get_bucket_timestamp(trade_dt, timeframe)
-
                 if bucket_key not in buckets:
                     buckets[bucket_key] = []
+
                 buckets[bucket_key].append({
                     "dt": trade_dt,
                     "unit_price": unit_price,
                     "quantity": qty,
-                    "total_price": total_price
+                    "total_price": t["total_price"]
                 })
 
             candles = []

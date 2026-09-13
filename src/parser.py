@@ -190,8 +190,14 @@ class MarketParser:
             if unit_price is None or unit_price <= 0:
                 continue
 
-            # Quantity estimation
+            # Quantity estimation with item-category sanity checks
             quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
+
+            # Scrolls and equipment never sell in lots > 20. If quantity > 20, unit_price was misread by OCR.
+            if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指"]):
+                if quantity > 20:
+                    unit_price = total_price
+                    quantity = 1
 
             # 4. Matched Time & Trader
             meta_box = self._scale_box(795, y1, 925, y2)

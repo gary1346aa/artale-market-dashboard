@@ -1061,9 +1061,15 @@ def generate_dashboard_html():
             }
 
             .search-box-wrapper {
-                flex: 1;
-                max-width: 220px;
-                width: auto;
+                flex: none;
+                width: 140px;
+                max-width: 140px;
+                transition: width 0.2s ease;
+            }
+
+            .search-box-wrapper:focus-within {
+                width: 165px;
+                max-width: 175px;
             }
 
             .market-table th, .market-table td {
@@ -1118,6 +1124,31 @@ def generate_dashboard_html():
         }
 
         @media (max-width: 420px) {
+            .search-box-wrapper {
+                width: 125px;
+                max-width: 130px;
+            }
+
+            .search-box-wrapper:focus-within {
+                width: 148px;
+                max-width: 155px;
+            }
+
+            .search-input {
+                padding: 5px 22px 5px 24px;
+                font-size: 0.76rem;
+            }
+
+            .search-icon {
+                left: 7px;
+                font-size: 0.75rem;
+            }
+
+            .search-clear {
+                right: 5px;
+                font-size: 0.76rem;
+            }
+
             .col-turnover {
                 display: none;
             }
@@ -1135,7 +1166,7 @@ def generate_dashboard_html():
         </div>
         <div class="search-box-wrapper">
             <span class="search-icon">🔍</span>
-            <input type="text" id="input-search" class="search-input" placeholder="搜尋道具名稱..." autocomplete="off" />
+            <input type="text" id="input-search" class="search-input" placeholder="搜尋道具..." autocomplete="off" />
             <button id="btn-clear-search" class="search-clear">✕</button>
         </div>
     </header>

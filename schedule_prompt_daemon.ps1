@@ -48,11 +48,6 @@ function Show-PromptDialog([string]$promptTimeStr) {
         }
     }
 
-    $singleEtaMin = [Math]::Max(1, [Math]::Round($itemCount * 7.0 / 60))
-    $singleEtaMax = [Math]::Max(2, [Math]::Round($itemCount * 8.5 / 60))
-    $bothEtaMin = $singleEtaMin * 2
-    $bothEtaMax = $singleEtaMax * 2
-
     try {
         [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -79,7 +74,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button A: Ask -->
             <Button Name="BtnA" Height="50" Margin="0,0,0,8" Background="#2563EB" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[A]  Ask Only (Active Listings)      [ETA: ~$singleEtaMin-$singleEtaMax mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="[A]  Ask Only (Active Listings)" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Scans active listings only. Updates Lowest Asks &amp; Spreads." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
@@ -87,7 +82,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button B: Trade -->
             <Button Name="BtnB" Height="50" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[B]  Trade Only (Matched Trades)     [ETA: ~$singleEtaMin-$singleEtaMax mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="[B]  Trade Only (Matched Trades)" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Scans matched trades only. Updates K-Line candlestick charts." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
@@ -95,7 +90,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button C: Both -->
             <Button Name="BtnC" Height="50" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[C]  Both (Ask + Trade)              [ETA: ~$bothEtaMin-$bothEtaMax mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="[C]  Both (Ask + Trade)" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Full update: scans both tabs. Updates K-Lines, Lowest Asks, and Spreads." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
@@ -166,10 +161,10 @@ function Show-PromptDialog([string]$promptTimeStr) {
             "It is now the scheduled collection time ($promptTimeStr).",
             "Target watchlist: $itemCount items. Please choose an option:",
             '',
-            "  [Yes]    [C] Both (Ask + Trade)          [~$bothEtaMin-$bothEtaMax mins]",
+            '  [Yes]    [C] Both (Ask + Trade)',
             '           Updates K-Lines, Lowest Asks, and Spreads',
             '',
-            "  [No]     [B] Trade Only (Matched Trades) [~$singleEtaMin-$singleEtaMax mins]",
+            '  [No]     [B] Trade Only (Matched Trades)',
             '           Updates K-Line candlestick charts only',
             '',
             '  [Cancel] [D] Postpone 30 Minutes',

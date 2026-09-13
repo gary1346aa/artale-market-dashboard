@@ -90,7 +90,18 @@ class KlineAggregator:
 
             # Calculate baseline median unit price for outlier / bundle detection
             all_prices = sorted([r[1] for r in rows if r[1] and r[1] >= 10000])
-            median_p = all_prices[len(all_prices) // 2] if all_prices else 0
+            global_med = all_prices[len(all_prices) // 2] if all_prices else 0
+
+            # Calculate day-level medians so price trends over the week aren't falsely cut
+            from collections import defaultdict
+            day_prices = defaultdict(list)
+            for r in rows:
+                d = (r[3] or r[4] or "")[:10]
+                if r[1] and r[1] >= 10000:
+                    day_prices[d].append(r[1])
+            day_medians = {}
+            for d, pts in day_prices.items():
+                day_medians[d] = sorted(pts)[len(pts) // 2] if len(pts) >= 3 else global_med
 
             # Bucket trades
             buckets: Dict[str, List[Dict]] = {}
@@ -100,20 +111,30 @@ class KlineAggregator:
                 if not unit_price or unit_price < 1000:
                     continue
 
-                # 1. RMT Filter: Ignore token meso trades (< 35% of median when median > 500,000)
-                # Catches token cash-transfers like 1, 14, 66, 4,444, 7,777, 499,999, etc.
-                if median_p > 500000 and unit_price < median_p * 0.35:
+                raw_time = r[3] or ""
+                cap_time = r[4] or ""
+                trade_day = (raw_time or cap_time)[:10]
+                median_p = day_medians.get(trade_day, global_med)
+
+                # 1. Low Threshold Filter (< 70% median):
+                # Catches RMT token meso, cash-settled transfers, and extreme dumping
+                if median_p > 500000 and unit_price < median_p * 0.70:
                     continue
 
-                # 2. Bundle & Spike Filter: Handle high outliers (> 1.8x median)
-                if median_p > 0 and unit_price > median_p * 1.8:
+                # 2. Upper Bound Filter (> 150% median):
+                # Check for legitimate multi-pack bundle, otherwise omit extreme spikes
+                if median_p > 0 and unit_price > median_p * 1.50:
                     ratio = round(unit_price / median_p)
                     if 2 <= ratio <= 15:
-                        # Legitimate multi-item bundle: normalize unit price and scale volume
-                        unit_price = round(unit_price / ratio)
-                        qty = max(qty, ratio)
-                    elif unit_price > median_p * 3.0:
-                        # Non-bundle extreme outlier / meso laundering: omit from candles
+                        norm_p = round(unit_price / ratio)
+                        if 0.70 * median_p <= norm_p <= 1.50 * median_p:
+                            # Legitimate multi-item bundle: normalize unit price and scale volume
+                            unit_price = norm_p
+                            qty = max(qty, ratio)
+                        else:
+                            continue
+                    else:
+                        # Non-bundle extreme outlier / spike (> 150% median): omit from candles
                         continue
 
                 total_price = r[2] or (qty * unit_price)

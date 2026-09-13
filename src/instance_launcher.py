@@ -99,12 +99,8 @@ class InstanceLauncher:
 
         # 4. First try quick navigation: 從自由市場進拍賣 (Alt + 7)
         logger.info(f"Instance '{instance_name}' is not in the Auction House. Attempting quick recovery '從自由市場進拍賣' (Alt + 7)...")
-        bounds = win_mgr.get_window_rect()
-        if bounds:
-            title_x = bounds.get("raw_left", bounds["left"]) + 200
-            title_y = bounds.get("raw_top", bounds["top"]) + 20
-            pyautogui.click(title_x, title_y)
-            time.sleep(0.5)
+        win_mgr.bring_to_front()
+        time.sleep(0.5)
 
         pyautogui.hotkey("alt", "7")
         # Poll every 2s for up to 25s to see if Alt + 7 navigates into Auction House
@@ -116,9 +112,8 @@ class InstanceLauncher:
 
         # 5. Fallback: Full boot & navigate macro: 開遊戲到拍賣場 (Alt + 9)
         logger.info(f"Alt + 7 timed out. Triggering full recovery '開遊戲到拍賣場' (Alt + 9)...")
-        if bounds:
-            pyautogui.click(title_x, title_y)
-            time.sleep(0.5)
+        win_mgr.bring_to_front()
+        time.sleep(0.5)
 
         pyautogui.hotkey("alt", "9")
         logger.info(f"Sent Alt + 9. Waiting up to {max_macro_wait}s for macro to enter Auction House...")

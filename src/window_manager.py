@@ -1,4 +1,5 @@
 import ctypes
+import ctypes.wintypes
 from typing import Optional, Tuple, List, Dict
 import mss
 from PIL import Image
@@ -52,7 +53,7 @@ class WindowManager:
                             break
             return True
 
-        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
         ctypes.windll.user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
 
         if found_hwnds:
@@ -103,8 +104,16 @@ class WindowManager:
         if not self.hwnd and not self.find_window():
             return False
 
-        ctypes.windll.user32.ShowWindow(self.hwnd, 9)
+        ctypes.windll.user32.ShowWindow(self.hwnd, 9)  # SW_RESTORE
         ctypes.windll.user32.SetForegroundWindow(self.hwnd)
+        
+        # Pop above all other windows, then clear topmost flag so user isn't locked
+        SWP_NOSIZE = 0x0001
+        SWP_NOMOVE = 0x0002
+        SWP_SHOWWINDOW = 0x0040
+        ctypes.windll.user32.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        ctypes.windll.user32.SetWindowPos(self.hwnd, -2, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        ctypes.windll.user32.BringWindowToTop(self.hwnd)
         return True
 
     def to_screen_coords(self, ref_x: int, ref_y: int) -> Optional[Tuple[int, int]]:
@@ -141,4 +150,51 @@ class WindowManager:
         sct_img = self.sct.grab(monitor)
         # Convert raw BGRA bytes to PIL Image (RGB)
         img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+        return img
+
+    def capture_ld_screencap(self, wait_banner_seconds: float = 8.0) -> Optional[Image.Image]:
+        """
+        Triggers LDPlayer's official Ctrl + 0 screenshot feature to get an un-occluded,
+        pixel-perfect 1280x720 emulator frame.
+        
+        SAFETY GUARD:
+        LDPlayer displays a top notification banner upon screenshot ("Screenshot saved...").
+        We enforce an 8-second delay after the shortcut to allow the banner to dismiss
+        completely before performing subsequent clicks, preventing accidental album preview switches.
+        """
+        import time
+        from pathlib import Path
+        import pyautogui
+
+        pic_dir = Path(r"C:\Users\gary1\Documents\XuanZhi9\Pictures\Screenshots")
+        before_files = set(pic_dir.glob("*.png")) if pic_dir.exists() else set()
+
+        if not self.bring_to_front():
+            return None
+        time.sleep(0.3)
+
+        bounds = self.get_window_rect()
+        if bounds:
+            cx = bounds["left"] + 640
+            cy = bounds["top"] + 360
+            pyautogui.click(cx, cy)
+            time.sleep(0.2)
+
+        pyautogui.hotkey("ctrl", "0")
+        time.sleep(1.0)
+
+        # Retrieve newly generated screenshot
+        img = None
+        after_files = set(pic_dir.glob("*.png")) if pic_dir.exists() else set()
+        new_files = sorted(list(after_files - before_files), key=lambda f: f.stat().st_mtime, reverse=True)
+        if new_files:
+            try:
+                img = Image.open(new_files[0]).convert("RGB")
+            except Exception:
+                pass
+
+        # Wait for top notification banner to fade out completely
+        if wait_banner_seconds > 1.0:
+            time.sleep(wait_banner_seconds - 1.0)
+
         return img

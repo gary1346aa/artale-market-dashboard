@@ -35,13 +35,35 @@ def init_db():
                 matched_unit_price INTEGER NOT NULL,
                 total_matched_price INTEGER,
                 trade_time TEXT,
+                trade_hash TEXT UNIQUE,
                 captured_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Table 3: Aggregated OHLCV Candlesticks (K-Line)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS kline_candles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_name TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                bucket_time TEXT NOT NULL,
+                open_price INTEGER NOT NULL,
+                high_price INTEGER NOT NULL,
+                low_price INTEGER NOT NULL,
+                close_price INTEGER NOT NULL,
+                volume INTEGER NOT NULL,
+                turnover INTEGER NOT NULL,
+                vwap INTEGER NOT NULL,
+                lowest_ask INTEGER,
+                trade_count INTEGER NOT NULL,
+                UNIQUE(item_name, timeframe, bucket_time) ON CONFLICT REPLACE
             )
         """)
         
         # Indexes for fast lookup and trend analysis
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_active_item ON active_listings(item_name, captured_at)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_matched_item ON matched_trades(item_name, captured_at)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_kline_lookup ON kline_candles(item_name, timeframe, bucket_time)")
         conn.commit()
 
 def save_active_listings(listings: List[ActiveListing]):
@@ -67,17 +89,46 @@ def save_active_listings(listings: List[ActiveListing]):
 def save_matched_trades(trades: List[MatchedTrade]):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        cursor.executemany("""
-            INSERT INTO matched_trades (item_name, quantity, matched_unit_price, total_matched_price, trade_time, captured_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, [
-            (
+        for t in trades:
+            # Deterministic hash to deduplicate overlapping pages
+            trade_hash = f"{t.item_name.strip()}_{t.quantity}_{t.matched_unit_price}_{t.trade_time.strip()}"
+            cursor.execute("""
+                INSERT OR IGNORE INTO matched_trades (item_name, quantity, matched_unit_price, total_matched_price, trade_time, trade_hash, captured_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
                 t.item_name,
                 t.quantity,
                 t.matched_unit_price,
                 t.total_matched_price,
                 t.trade_time,
+                trade_hash,
                 t.captured_at.isoformat()
-            ) for t in trades
+            ))
+        conn.commit()
+
+def save_kline_candles(candles: List[dict]):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.executemany("""
+            INSERT INTO kline_candles (
+                item_name, timeframe, bucket_time, open_price, high_price, 
+                low_price, close_price, volume, turnover, vwap, lowest_ask, trade_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [
+            (
+                c["item_name"],
+                c["timeframe"],
+                c["bucket_time"],
+                c["open_price"],
+                c["high_price"],
+                c["low_price"],
+                c["close_price"],
+                c["volume"],
+                c["turnover"],
+                c["vwap"],
+                c.get("lowest_ask"),
+                c["trade_count"]
+            ) for c in candles
         ])
         conn.commit()
+

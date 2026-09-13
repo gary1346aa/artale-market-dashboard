@@ -5,6 +5,8 @@ __pycache__/
 *.db
 data/
 debug_crops/
+*.png
+*.log
 .env
 .venv/
 env/

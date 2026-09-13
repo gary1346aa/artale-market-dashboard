@@ -54,6 +54,18 @@ Examples:
         default=2,
         help="Number of pages to paginate and collect per query (default: 2)"
     )
+    parser.add_argument(
+        "--target-tab",
+        choices=["asks", "trades", "both"],
+        default="both",
+        help="Which auction tab to query: 'asks' (only 查詢), 'trades' (only 市價), or 'both' (default)"
+    )
+    parser.add_argument(
+        "--instance",
+        type=str,
+        default=None,
+        help="Specific LDPlayer instance to target (e.g. '槍手', '祈禱機'). Default is auto-rotation based on available quota."
+    )
 
     args = parser.parse_args()
 
@@ -70,9 +82,9 @@ Examples:
         monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
         monitor.start_listener()
     else:
-        collector = MarketCollector(window_mgr=target_win_mgr)
+        collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance)
         if args.query:
-            collector.run_query_collection(args.query, max_pages=args.pages, check_both_tabs=True)
+            collector.run_query_collection(args.query, max_pages=args.pages, target_tab=args.target_tab)
         else:
             watchlist_path = Path(args.watchlist)
             if not watchlist_path.exists():
@@ -80,7 +92,8 @@ Examples:
                 return
             with open(watchlist_path, "r", encoding="utf-8") as f:
                 items = json.load(f)
-            collector.run_catalog_scan(items, max_pages_per_query=args.pages)
+            collector.run_catalog_scan(items, max_pages_per_query=args.pages, target_tab=args.target_tab)
+
 
 if __name__ == "__main__":
     main()

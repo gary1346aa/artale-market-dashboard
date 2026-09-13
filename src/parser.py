@@ -72,14 +72,23 @@ class MarketParser:
 
     def parse_pagination(self) -> Optional[Tuple[int, int]]:
         """
-        Extracts (current_page, total_pages) from the pagination control (e.g. '1 / 20').
+        Extracts (current_page, total_pages) from the pagination control (e.g. '1 / 20' or '8 / 8').
+        Uses multi-box sampling and character normalization.
         """
-        box = self._scale_box(575, 95, 640, 130)
-        crop = self.raw_image.crop(box).resize((200, 70), Image.Resampling.LANCZOS)
-        text = ocr_image(crop, lang="en-US")
-        match = re.search(r"(\d+)\s*/\s*(\d+)", text)
-        if match:
-            return (int(match.group(1)), int(match.group(2)))
+        for box_coords in [
+            (568, 88, 688, 124),  # Scaled on 1280x720: (710, 110, 860, 155)
+            (576, 92, 688, 128),  # Scaled on 1280x720: (720, 115, 860, 160)
+            (568, 88, 664, 128)
+        ]:
+            box = self._scale_box(*box_coords)
+            crop = self.raw_image.crop(box)
+            text = ocr_image(crop, lang="en-US")
+            cleaned = text.replace("B", "8").replace("O", "0").replace("o", "0").replace("S", "5").replace("s", "5")
+            match = re.search(r"(\d+)\s*[/\|lI\\]\s*(\d+)", cleaned)
+            if match:
+                curr, total = int(match.group(1)), int(match.group(2))
+                if 1 <= curr <= total:
+                    return (curr, total)
         return None
 
     def parse_active_listings(self) -> List[ActiveListing]:

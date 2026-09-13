@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 import pyautogui
+from PIL import Image, ImageChops, ImageStat
 
 from .window_manager import WindowManager
 
@@ -73,10 +74,44 @@ class InstanceLauncher:
         except Exception:
             return False
 
+    def is_free_market(self, win_mgr: WindowManager) -> bool:
+        """
+        Verifies if the character is currently standing in the Artale Free Market (自由市場).
+        Uses template matching on the '自由市場' map name at top-left and MapleStory in-game HUD landmarks.
+        """
+        frame = win_mgr.capture_frame()
+        if not frame or frame.width < 500 or frame.height < 300:
+            return False
+        try:
+            # 1. Template comparison with assets/free_market_indicator.png
+            tpl_path = Path(__file__).resolve().parent.parent / "assets" / "free_market_indicator.png"
+            if tpl_path.exists():
+                tpl = Image.open(tpl_path).convert("RGB")
+                crop = frame.crop((50, 50, 140, 75)).convert("RGB")
+                diff = ImageChops.difference(crop, tpl)
+                diff_score = sum(ImageStat.Stat(diff).mean)
+                if diff_score < 40.0:
+                    return True
+
+            # 2. Backup check: HP/MP status bar at bottom center and minimap header
+            p_hp = frame.getpixel((600, 647))[:3]
+            p_mp = frame.getpixel((600, 668))[:3]
+            hp_ok = (p_hp[0] > 180 and p_hp[1] < 160 and p_hp[2] < 160)
+            mp_ok = (p_mp[2] > 180 and p_mp[0] < 100 and p_mp[1] > 80)
+
+            p_mm = frame.getpixel((30, 18))[:3]
+            mm_ok = (p_mm[0] > 240 and p_mm[1] > 240 and p_mm[2] > 240)
+
+            return hp_ok and mp_ok and mm_ok
+        except Exception as e:
+            logger.debug(f"Error checking Free Market: {e}")
+            return False
+
     def ensure_instance_in_auction(self, instance_name: str, max_macro_wait: int = 320) -> bool:
         """
         Ensures that the specified instance is running and currently parked inside the Auction House.
-        If not yet in the auction, triggers '開遊戲到拍賣場.record' via Alt + 9 and waits for completion.
+        If verified inside Free Market, triggers Alt + 7.
+        If on Home Screen or other screen, skips Alt + 7 and executes '開遊戲到拍賣場.record' via Alt + 9.
         """
         # 1. Ensure emulator is running
         if not self.launch_instance(instance_name):
@@ -97,21 +132,25 @@ class InstanceLauncher:
             logger.info(f"Instance '{instance_name}' is already verified inside the Auction House.")
             return True
 
-        # 4. First try quick navigation: 從自由市場進拍賣 (Alt + 7)
-        logger.info(f"Instance '{instance_name}' is not in the Auction House. Attempting quick recovery '從自由市場進拍賣' (Alt + 7)...")
-        win_mgr.bring_to_front()
-        time.sleep(0.5)
+        # 4. Strictly check screen: ONLY execute Alt + 7 if standing in Free Market!
+        if self.is_free_market(win_mgr):
+            logger.info(f"Instance '{instance_name}' is verified in the FREE MARKET (自由市場). Triggering quick recovery (Alt + 7)...")
+            win_mgr.bring_to_front()
+            time.sleep(0.5)
 
-        pyautogui.hotkey("alt", "7")
-        # Poll every 2s for up to 25s to see if Alt + 7 navigates into Auction House
-        for _ in range(12):
-            time.sleep(2)
-            if self.is_auction_open(win_mgr):
-                logger.info(f"SUCCESS: Instance '{instance_name}' reached Auction House via Alt + 7!")
-                return True
+            pyautogui.hotkey("alt", "7")
+            # Poll every 2s for up to 25s to see if Alt + 7 navigates into Auction House
+            for _ in range(12):
+                time.sleep(2)
+                if self.is_auction_open(win_mgr):
+                    logger.info(f"SUCCESS: Instance '{instance_name}' reached Auction House via Alt + 7!")
+                    return True
+            logger.warning(f"Alt + 7 timed out from Free Market. Falling back to Alt + 9...")
+        else:
+            logger.info(f"Instance '{instance_name}' is NOT in the Free Market (Home Screen / outside Artale). STRICT SAFETY RULE: Skipping Alt + 7 to avoid misclicking apps!")
 
         # 5. Fallback: Full boot & navigate macro: 開遊戲到拍賣場 (Alt + 9)
-        logger.info(f"Alt + 7 timed out. Triggering full recovery '開遊戲到拍賣場' (Alt + 9)...")
+        logger.info(f"Triggering full recovery '開遊戲到拍賣場' (Alt + 9)...")
         win_mgr.bring_to_front()
         time.sleep(0.5)
 

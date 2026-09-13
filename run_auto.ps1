@@ -17,16 +17,16 @@ Set-Location "C:\Users\gary1\artale_market_tracker"
 $python = "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe"
 $logFile = "C:\Users\gary1\collector_run.log"
 
-# Support dynamic config overrides when executed via Task Scheduler or daemon
+# Support dynamic config overrides ONLY for unset parameters
 if (Test-Path "run_config.json") {
     try {
         $cfg = Get-Content "run_config.json" -Raw -Encoding utf8 | ConvertFrom-Json
-        if ($cfg.Watchlist) { $Watchlist = $cfg.Watchlist }
-        if ($cfg.Query) { $Query = $cfg.Query }
-        if ($null -ne $cfg.Pages) { $Pages = $cfg.Pages }
-        if ($cfg.TargetTab) { $TargetTab = $cfg.TargetTab }
-        if ($cfg.Instance) { $Instance = $cfg.Instance }
-        if ($cfg.Script) { $Script = $cfg.Script }
+        if ($cfg.Watchlist -and -not $PSBoundParameters.ContainsKey('Watchlist')) { $Watchlist = $cfg.Watchlist }
+        if ($cfg.Query -and -not $PSBoundParameters.ContainsKey('Query')) { $Query = $cfg.Query }
+        if ($null -ne $cfg.Pages -and -not $PSBoundParameters.ContainsKey('Pages')) { $Pages = $cfg.Pages }
+        if ($cfg.TargetTab -and -not $PSBoundParameters.ContainsKey('TargetTab')) { $TargetTab = $cfg.TargetTab }
+        if ($cfg.Instance -and -not $PSBoundParameters.ContainsKey('Instance')) { $Instance = $cfg.Instance }
+        if ($cfg.Script -and -not $PSBoundParameters.ContainsKey('Script')) { $Script = $cfg.Script }
         if ($cfg.OneShot) { Remove-Item "run_config.json" -Force }
     } catch {
         "Failed to parse run_config.json: $_" | Out-File $logFile -Append -Encoding utf8

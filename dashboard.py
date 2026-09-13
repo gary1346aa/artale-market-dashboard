@@ -82,6 +82,7 @@ def generate_dashboard_html():
 
     payload = export_dashboard_data()
     json_str = json.dumps(payload, ensure_ascii=False)
+    last_synced_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-TW">
@@ -325,6 +326,72 @@ def generate_dashboard_html():
                 font-size: 0.8rem;
             }}
         }}
+
+        /* Footer Attribution & Status Bar */
+        .dashboard-footer {{
+            background-color: var(--bg-card);
+            border-top: 1px solid var(--border-color);
+            padding: 7px 16px;
+            padding-bottom: max(7px, env(safe-area-inset-bottom));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.72rem;
+            color: var(--text-sub);
+            flex-shrink: 0;
+            z-index: 10;
+        }}
+
+        .footer-status {{
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }}
+
+        .status-dot {{
+            width: 7px;
+            height: 7px;
+            background-color: #26a69a;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 6px rgba(38, 166, 154, 0.7);
+            animation: pulse-dot 2.5s infinite;
+        }}
+
+        @keyframes pulse-dot {{
+            0% {{ transform: scale(0.95); opacity: 0.8; }}
+            50% {{ transform: scale(1.15); opacity: 1; }}
+            100% {{ transform: scale(0.95); opacity: 0.8; }}
+        }}
+
+        .sync-time {{
+            color: #d1d4dc;
+            font-weight: 600;
+        }}
+
+        .footer-credit strong {{
+            color: #e5e7eb;
+            letter-spacing: 0.3px;
+        }}
+
+        @media (max-width: 480px) {{
+            .dashboard-footer {{
+                padding: 6px 12px;
+                padding-bottom: max(6px, env(safe-area-inset-bottom));
+                font-size: 0.68rem;
+                gap: 6px;
+            }}
+        }}
+
+        @media (max-width: 360px) {{
+            .dashboard-footer {{
+                flex-direction: column;
+                gap: 3px;
+                padding: 5px 8px;
+                padding-bottom: max(5px, env(safe-area-inset-bottom));
+                text-align: center;
+            }}
+        }}
     </style>
 </head>
 <body>
@@ -375,6 +442,16 @@ def generate_dashboard_html():
 
     <div id="chart-container"></div>
 
+    <footer class="dashboard-footer">
+        <div class="footer-status">
+            <span class="status-dot"></span>
+            <span>Last Updated: <strong class="sync-time">{last_synced_time}</strong></span>
+        </div>
+        <div class="footer-credit">
+            <span>© 2026 By <strong>5AM G8G</strong></span>
+        </div>
+    </footer>
+
     <script>
         const payload = {json_str};
         const items = payload.items;
@@ -421,8 +498,8 @@ def generate_dashboard_html():
                 borderColor: '#2a2e39',
                 autoScale: true,
                 scaleMargins: {{
-                    top: 0.1,
-                    bottom: 0.22,
+                    top: 0.08,
+                    bottom: 0.20,
                 }},
                 entireTextOnly: false,
             }},
@@ -462,7 +539,9 @@ def generate_dashboard_html():
                     const minP = res.priceRange.minValue;
                     const maxP = res.priceRange.maxValue;
                     const diff = maxP - minP;
-                    const pad = diff > 0 ? diff * 0.08 : (maxP > 0 ? maxP * 0.05 : 1000);
+                    // Visible span: 1.5 * (highest - lowest) -> 0.25 * diff padding top and bottom
+                    const span = diff > 0 ? diff : (maxP > 0 ? maxP * 0.05 : 1000);
+                    const pad = span * 0.25;
                     return {{
                         priceRange: {{
                             minValue: Math.max(1, minP - pad),
@@ -477,15 +556,14 @@ def generate_dashboard_html():
         const volumeSeries = chart.addHistogramSeries({{
             color: '#26a69a',
             priceFormat: {{ type: 'volume' }},
-            priceScaleId: 'volume_scale',
+            priceScaleId: '',
         }});
 
-        chart.priceScale('volume_scale').applyOptions({{
+        volumeSeries.priceScale().applyOptions({{
             scaleMargins: {{
-                top: 0.82,
+                top: 0.8,
                 bottom: 0,
             }},
-            visible: false,
         }});
 
         // Responsive Resize Observer

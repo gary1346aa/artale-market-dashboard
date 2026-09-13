@@ -206,6 +206,9 @@ class KlineAggregator:
                 candles.append(candle)
 
             if candles:
+                with sqlite3.connect(self.db_path) as conn:
+                    conn.execute("DELETE FROM kline_candles WHERE item_name = ? AND timeframe = ?", (item_name, timeframe))
+                    conn.commit()
                 save_kline_candles(candles)
             return candles
 

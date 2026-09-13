@@ -773,27 +773,6 @@ def generate_dashboard_html():
             font-variant-numeric: tabular-nums;
         }
 
-        /* Action K-Line Button */
-        .btn-chart-action {
-            background-color: #1f2430;
-            color: #70a1ff;
-            border: 1px solid #2e3547;
-            padding: 5px 12px;
-            border-radius: 5px;
-            font-size: 0.78rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            white-space: nowrap;
-        }
-
-        .btn-chart-action:hover {
-            background-color: var(--accent-blue);
-            border-color: var(--accent-blue);
-            color: #ffffff;
-            box-shadow: 0 2px 8px rgba(41, 98, 255, 0.35);
-        }
-
         .no-data-msg {
             text-align: center;
             padding: 40px 20px;
@@ -1189,7 +1168,6 @@ def generate_dashboard_html():
                             <th data-sort="turnover" class="sortable col-turnover" style="text-align: right;">24h 成交額 / 量 <span class="sort-icon active" id="sort-turnover">↓</span></th>
                             <th data-sort="ask" class="sortable" style="text-align: right;">最低掛賣 (價差) <span class="sort-icon" id="sort-ask">↕</span></th>
                             <th class="col-range" style="text-align: right;">24h 價格區間</th>
-                            <th style="text-align: center; width: 75px;">操作</th>
                         </tr>
                     </thead>
                     <tbody id="market-table-body">
@@ -1550,9 +1528,6 @@ def generate_dashboard_html():
                     </td>
                     <td style="text-align: right;" class="col-range">
                         <div class="range-text">${rangeStr}</div>
-                    </td>
-                    <td style="text-align: center;" onclick="event.stopPropagation()">
-                        <button class="btn-chart-action" onclick="showChart('${it.name}')">📊 K線</button>
                     </td>
                 </tr>
                 `;

@@ -84,8 +84,12 @@ class WindowManager:
                 "top": rect.top + top_bar_offset,
                 "width": game_w,
                 "height": game_h,
+                "right": rect.left + game_w,
+                "bottom": rect.top + top_bar_offset + game_h,
                 "raw_left": rect.left,
                 "raw_top": rect.top,
+                "raw_right": rect.right,
+                "raw_bottom": rect.bottom,
                 "raw_width": w,
                 "raw_height": h
             }
@@ -94,7 +98,9 @@ class WindowManager:
             "left": rect.left,
             "top": rect.top,
             "width": w,
-            "height": h
+            "height": h,
+            "right": rect.right,
+            "bottom": rect.bottom
         }
 
     def bring_to_front(self) -> bool:

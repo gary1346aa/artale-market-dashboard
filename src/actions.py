@@ -69,10 +69,15 @@ def sync_clipboard_and_focus(win_mgr, text: str):
 
     # Step 1: Click outside LDPlayer to drop focus
     if bounds:
-        if bounds["left"] > 30:
-            out_x, out_y = 10, bounds["top"] + 50
-        elif bounds["right"] < screen_w - 30:
-            out_x, out_y = screen_w - 10, bounds["top"] + 50
+        b_left = bounds.get("left", 0)
+        b_top = bounds.get("top", 50)
+        b_width = bounds.get("width", 1280)
+        b_right = bounds.get("right", b_left + b_width)
+
+        if b_left > 30:
+            out_x, out_y = 10, b_top + 50
+        elif b_right < screen_w - 30:
+            out_x, out_y = screen_w - 10, b_top + 50
         else:
             out_x, out_y = screen_w // 2, screen_h - 8
     else:
@@ -83,8 +88,8 @@ def sync_clipboard_and_focus(win_mgr, text: str):
 
     # Step 2: Click back on LDPlayer window title bar to regain focus
     if bounds:
-        in_x = bounds["left"] + 250
-        in_y = bounds["top"] + 15
+        in_x = bounds.get("raw_left", bounds.get("left", 0)) + 250
+        in_y = bounds.get("raw_top", max(0, bounds.get("top", 0) - 51)) + 15
         pyautogui.click(in_x, in_y)
     elif win_mgr:
         win_mgr.bring_to_front()

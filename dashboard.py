@@ -1520,7 +1520,7 @@ def generate_dashboard_html():
                     </td>
                     <td style="text-align: right;" class="col-turnover">
                         <div class="turnover-val">${formatMeso(it.turnover_24)}</div>
-                        <div class="turnover-sub">${it.vol_24.toLocaleString()} 張 (${it.trades_24} 筆)</div>
+                        <div class="turnover-sub">${it.vol_24.toLocaleString()} 件 (${it.trades_24} 筆)</div>
                     </td>
                     <td style="text-align: right;">
                         <div class="ask-val">${formatMeso(it.lowest_ask)}</div>
@@ -1740,7 +1740,7 @@ def generate_dashboard_html():
                 valClose.textContent = formatMeso(latest.close);
                 valClose.className = "metric-val " + (latest.close >= latest.open ? "c-up" : "c-down");
                 valVwap.textContent = formatMeso(latest.vwap);
-                valVol.textContent = latest.volume.toLocaleString() + " 張";
+                valVol.textContent = latest.volume.toLocaleString() + " 件";
 
                 const allHighs = candles.map(c => c.high);
                 const allLows = candles.map(c => c.low);
@@ -1783,7 +1783,7 @@ def generate_dashboard_html():
                 valRange.textContent = formatMeso(cItem.high) + " / " + formatMeso(cItem.low);
             }
             if (vItem) {
-                valVol.textContent = vItem.value.toLocaleString() + " 張";
+                valVol.textContent = vItem.value.toLocaleString() + " 件";
             }
         });
 

@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$Watchlist = "items_watchlist.json",
     [string]$Query = "",
     [int]$Pages = 2,

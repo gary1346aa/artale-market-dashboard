@@ -36,6 +36,23 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
 function Show-PromptDialog([string]$promptTimeStr) {
+    # Dynamically read current watchlist item count
+    $watchlistPath = "$workDir\items_watchlist.json"
+    $itemCount = 84
+    if (Test-Path $watchlistPath) {
+        try {
+            $wl = Get-Content $watchlistPath -Raw -Encoding utf8 | ConvertFrom-Json
+            $itemCount = $wl.Count
+        } catch {
+            $itemCount = 84
+        }
+    }
+
+    $singleEtaMin = [Math]::Max(1, [Math]::Round($itemCount * 7.0 / 60))
+    $singleEtaMax = [Math]::Max(2, [Math]::Round($itemCount * 8.5 / 60))
+    $bothEtaMin = $singleEtaMin * 2
+    $bothEtaMax = $singleEtaMax * 2
+
     try {
         [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -54,7 +71,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
 
         <StackPanel Grid.Row="0">
             <TextBlock Text="Artale Market Tracker - Scheduled Update" FontSize="16" FontWeight="Bold" Foreground="#111827"/>
-            <TextBlock Text="Scheduled time ($promptTimeStr) reached. Target watchlist: 84 items." FontSize="12" Foreground="#4B5563" Margin="0,2,0,0"/>
+            <TextBlock Text="Scheduled time ($promptTimeStr) reached. Target watchlist: $itemCount items." FontSize="12" Foreground="#4B5563" Margin="0,2,0,0"/>
             <TextBlock Text="Please choose an option to proceed (or press A / B / C / D):" FontSize="13" Foreground="#1F2937" Margin="0,6,0,0"/>
         </StackPanel>
 
@@ -62,7 +79,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button A: Ask -->
             <Button Name="BtnA" Height="50" Margin="0,0,0,8" Background="#2563EB" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[A]  Ask Only (Active Listings)      [ETA: ~10-12 mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="[A]  Ask Only (Active Listings)      [ETA: ~$singleEtaMin-$singleEtaMax mins]" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Scans active listings only. Updates Lowest Asks &amp; Spreads." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
@@ -70,7 +87,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button B: Trade -->
             <Button Name="BtnB" Height="50" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[B]  Trade Only (Matched Trades)     [ETA: ~10-12 mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="[B]  Trade Only (Matched Trades)     [ETA: ~$singleEtaMin-$singleEtaMax mins]" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Scans matched trades only. Updates K-Line candlestick charts." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
@@ -78,7 +95,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button C: Both -->
             <Button Name="BtnC" Height="50" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[C]  Both (Ask + Trade)              [ETA: ~20-25 mins]" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="[C]  Both (Ask + Trade)              [ETA: ~$bothEtaMin-$bothEtaMax mins]" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Full update: scans both tabs. Updates K-Lines, Lowest Asks, and Spreads." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
@@ -147,12 +164,12 @@ function Show-PromptDialog([string]$promptTimeStr) {
             '[Artale Market Tracker - Scheduled Update]',
             '',
             "It is now the scheduled collection time ($promptTimeStr).",
-            'Target watchlist: 84 items. Please choose an option:',
+            "Target watchlist: $itemCount items. Please choose an option:",
             '',
-            '  [Yes]    [C] Both (Ask + Trade)          [~20-25 mins]',
+            "  [Yes]    [C] Both (Ask + Trade)          [~$bothEtaMin-$bothEtaMax mins]",
             '           Updates K-Lines, Lowest Asks, and Spreads',
             '',
-            '  [No]     [B] Trade Only (Matched Trades) [~10-12 mins]',
+            "  [No]     [B] Trade Only (Matched Trades) [~$singleEtaMin-$singleEtaMax mins]",
             '           Updates K-Line candlestick charts only',
             '',
             '  [Cancel] [D] Postpone 30 Minutes',

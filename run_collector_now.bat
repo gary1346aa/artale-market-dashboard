@@ -5,12 +5,20 @@ echo =======================================================
 echo    Artale Market Tracker - Manual Collection Run
 echo =======================================================
 echo.
-echo Target Watchlist: 84 items
+for /f %%a in ('powershell -Command "(Get-Content items_watchlist.json -Raw | ConvertFrom-Json).Count"') do set ITEM_COUNT=%%a
+if "%ITEM_COUNT%"=="" set ITEM_COUNT=84
+
+set /a SINGLE_ETA_MIN=(ITEM_COUNT * 7) / 60
+set /a SINGLE_ETA_MAX=(ITEM_COUNT * 9) / 60
+set /a BOTH_ETA_MIN=SINGLE_ETA_MIN * 2
+set /a BOTH_ETA_MAX=SINGLE_ETA_MAX * 2
+
+echo Target Watchlist: %ITEM_COUNT% items
 echo.
 echo Select collection mode:
-echo   [A] Ask Only (Active Listings)   [ETA: ~10-12 mins]
-echo   [B] Trade Only (Matched Trades)  [ETA: ~10-12 mins]
-echo   [C] Both (Ask + Trade)           [ETA: ~20-25 mins] [Default]
+echo   [A] Ask Only (Active Listings)   [ETA: ~%SINGLE_ETA_MIN%-%SINGLE_ETA_MAX% mins]
+echo   [B] Trade Only (Matched Trades)  [ETA: ~%SINGLE_ETA_MIN%-%SINGLE_ETA_MAX% mins]
+echo   [C] Both (Ask + Trade)           [ETA: ~%BOTH_ETA_MIN%-%BOTH_ETA_MAX% mins] [Default]
 echo   [D] Cancel
 echo.
 set /p mode="Enter choice [A, B, C, or D, default=C]: "

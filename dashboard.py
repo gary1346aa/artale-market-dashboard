@@ -85,69 +85,261 @@ def generate_dashboard_html():
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Artale 自由市場 K線分析儀 (Phase 2)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Artale Market</title>
     <script>{js_code}</script>
     <style>
-        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }}
-        body {{ background-color: #131722; color: #d1d4dc; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }}
-        
+        :root {{
+            --bg-main: #131722;
+            --bg-card: #1e222d;
+            --bg-hover: #2a2e39;
+            --border-color: #2a2e39;
+            --text-main: #d1d4dc;
+            --text-sub: #787b86;
+            --accent-blue: #2962ff;
+            --c-up: #26a69a;
+            --c-down: #ef5350;
+            --c-ask: #ff9800;
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }}
+
+        html, body {{
+            height: 100%;
+            height: 100dvh;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+        }}
+
+        /* Header Navigation */
         header {{
-            background-color: #1e222d;
-            padding: 12px 24px;
+            background-color: var(--bg-card);
+            padding: 10px 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid #2a2e39;
+            gap: 12px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
         }}
-        .logo {{ font-size: 1.25rem; font-weight: 700; color: #2962ff; display: flex; align-items: center; gap: 8px; }}
-        .controls {{ display: flex; align-items: center; gap: 16px; }}
-        select, button {{
-            background-color: #2a2e39;
-            color: #d1d4dc;
-            border: 1px solid #363c4e;
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            outline: none;
-        }}
-        select:focus, button:hover {{ border-color: #2962ff; }}
-        .btn-tf.active {{ background-color: #2962ff; color: #fff; font-weight: 600; }}
 
-        .metric-bar {{
-            background-color: #181c27;
-            padding: 10px 24px;
+        .header-main {{
             display: flex;
-            gap: 32px;
-            border-bottom: 1px solid #2a2e39;
-            font-size: 0.9rem;
+            align-items: center;
+            gap: 12px;
         }}
-        .metric {{ display: flex; flex-direction: column; gap: 2px; }}
-        .metric-label {{ color: #787b86; font-size: 0.75rem; text-transform: uppercase; }}
-        .metric-val {{ font-weight: 700; font-size: 1.05rem; }}
-        .c-up {{ color: #26a69a; }}
-        .c-down {{ color: #ef5350; }}
-        .c-ask {{ color: #ff9800; }}
 
+        .logo {{
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }}
+
+        .header-controls {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            justify-content: flex-end;
+        }}
+
+        .header-select {{
+            flex: 1;
+            max-width: 320px;
+        }}
+
+        select {{
+            width: 100%;
+            background-color: #2a2e39;
+            color: var(--text-main);
+            border: 1px solid #363c4e;
+            padding: 7px 12px;
+            border-radius: 6px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            outline: none;
+            cursor: pointer;
+            appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg fill="%23d1d4dc" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 18px;
+            padding-right: 30px;
+        }}
+
+        select:focus {{
+            border-color: var(--accent-blue);
+        }}
+
+        .tf-group {{
+            display: inline-flex;
+            background-color: #131722;
+            border-radius: 6px;
+            padding: 2px;
+            border: 1px solid #2a2e39;
+            flex-shrink: 0;
+        }}
+
+        .btn-tf {{
+            background: transparent;
+            color: var(--text-sub);
+            border: none;
+            padding: 5px 12px;
+            border-radius: 4px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }}
+
+        .btn-tf:hover {{
+            color: var(--text-main);
+        }}
+
+        .btn-tf.active {{
+            background-color: var(--accent-blue);
+            color: #ffffff;
+        }}
+
+        /* Financial Metrics Strip */
+        .metric-bar {{
+            background-color: #161922;
+            padding: 8px 16px;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }}
+
+        .metric {{
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }}
+
+        .metric-label {{
+            color: var(--text-sub);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }}
+
+        .metric-val {{
+            font-weight: 700;
+            font-size: 0.96rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-variant-numeric: tabular-nums;
+        }}
+
+        .c-up {{ color: var(--c-up); }}
+        .c-down {{ color: var(--c-down); }}
+        .c-ask {{ color: var(--c-ask); }}
+
+        /* Chart Canvas */
         #chart-container {{
             flex: 1;
             position: relative;
             width: 100%;
+            min-height: 0;
+            touch-action: pan-y pinch-zoom;
+        }}
+
+        /* Responsive Mobile Layout (<= 768px) */
+        @media (max-width: 768px) {{
+            header {{
+                flex-direction: column;
+                align-items: stretch;
+                padding: 8px 12px;
+                gap: 8px;
+            }}
+
+            .header-main {{
+                justify-content: space-between;
+                width: 100%;
+            }}
+
+            .header-controls {{
+                width: 100%;
+                justify-content: stretch;
+            }}
+
+            .header-select {{
+                max-width: 100%;
+                width: 100%;
+            }}
+
+            select {{
+                padding: 8px 12px;
+                font-size: 0.92rem;
+            }}
+
+            .metric-bar {{
+                grid-template-columns: repeat(3, 1fr);
+                gap: 6px 10px;
+                padding: 6px 12px;
+            }}
+
+            .metric-label {{
+                font-size: 0.65rem;
+            }}
+
+            .metric-val {{
+                font-size: 0.88rem;
+            }}
+        }}
+
+        @media (max-width: 380px) {{
+            .metric-bar {{
+                grid-template-columns: repeat(3, 1fr);
+                gap: 4px 6px;
+                padding: 4px 8px;
+            }}
+            .metric-label {{
+                font-size: 0.6rem;
+            }}
+            .metric-val {{
+                font-size: 0.8rem;
+            }}
         }}
     </style>
 </head>
 <body>
     <header>
-        <div class="logo">
-            <span>🍁</span> Artale Market Candlestick Terminal (Phase 2)
+        <div class="header-main">
+            <div class="logo">
+                <span>🍁</span> <span class="logo-title">Artale Market</span>
+            </div>
+            <div class="tf-group">
+                <button class="btn-tf active" data-tf="1h">1H</button>
+                <button class="btn-tf" data-tf="4h">4H</button>
+                <button class="btn-tf" data-tf="1d">1D</button>
+            </div>
         </div>
-        <div class="controls">
-            <select id="item-selector"></select>
-            <div id="tf-buttons">
-                <button class="btn-tf active" data-tf="1h">1小時 (1H)</button>
-                <button class="btn-tf" data-tf="4h">4小時 (4H)</button>
-                <button class="btn-tf" data-tf="1d">日線 (1D)</button>
+        <div class="header-controls">
+            <div class="header-select">
+                <select id="item-selector"></select>
             </div>
         </div>
     </header>
@@ -162,7 +354,7 @@ def generate_dashboard_html():
             <span class="metric-val c-ask" id="val-ask">--</span>
         </div>
         <div class="metric">
-            <span class="metric-label">買賣價差 (Ask Spread)</span>
+            <span class="metric-label">買賣價差 (Spread)</span>
             <span class="metric-val" id="val-spread">--</span>
         </div>
         <div class="metric">
@@ -170,8 +362,12 @@ def generate_dashboard_html():
             <span class="metric-val" id="val-vwap">--</span>
         </div>
         <div class="metric">
-            <span class="metric-label">成交總量 (Volume)</span>
+            <span class="metric-label">成交量 (Volume)</span>
             <span class="metric-val" id="val-vol">--</span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">區間最高/低 (H/L)</span>
+            <span class="metric-val" id="val-range">--</span>
         </div>
     </div>
 
@@ -193,6 +389,7 @@ def generate_dashboard_html():
         const valSpread = document.getElementById("val-spread");
         const valVwap = document.getElementById("val-vwap");
         const valVol = document.getElementById("val-vol");
+        const valRange = document.getElementById("val-range");
 
         // Populate item selector
         items.forEach(it => {{
@@ -202,11 +399,14 @@ def generate_dashboard_html():
             selector.appendChild(opt);
         }});
 
+        const isMobile = window.innerWidth <= 768;
+
         // Init Lightweight Chart
         const chart = LightweightCharts.createChart(chartContainer, {{
             layout: {{
                 background: {{ color: '#131722' }},
                 textColor: '#d1d4dc',
+                fontSize: isMobile ? 11 : 12,
             }},
             grid: {{
                 vertLines: {{ color: '#1e222d' }},
@@ -220,17 +420,20 @@ def generate_dashboard_html():
                 autoScale: true,
                 scaleMargins: {{
                     top: 0.1,
-                    bottom: 0.25,
+                    bottom: 0.22,
                 }},
+                entireTextOnly: false,
             }},
             timeScale: {{
                 borderColor: '#2a2e39',
                 timeVisible: true,
                 secondsVisible: false,
-                barSpacing: 18,
-                minBarSpacing: 4,
-                rightOffset: 5,
+                barSpacing: isMobile ? 13 : 18,
+                minBarSpacing: 3,
+                rightOffset: 3,
             }},
+            handleScroll: true,
+            handleScale: true,
         }});
 
         const candleSeries = chart.addCandlestickSeries({{
@@ -242,6 +445,7 @@ def generate_dashboard_html():
             priceFormat: {{
                 type: 'custom',
                 formatter: (price) => {{
+                    if (price <= 0) return '0';
                     if (price >= 100000000) {{
                         return (price / 100000000).toFixed(2) + ' 億';
                     }} else if (price >= 10000) {{
@@ -256,10 +460,10 @@ def generate_dashboard_html():
                     const minP = res.priceRange.minValue;
                     const maxP = res.priceRange.maxValue;
                     const diff = maxP - minP;
-                    const pad = diff > 0 ? diff * 0.1 : (maxP > 0 ? maxP * 0.05 : 1000);
+                    const pad = diff > 0 ? diff * 0.08 : (maxP > 0 ? maxP * 0.05 : 1000);
                     return {{
                         priceRange: {{
-                            minValue: Math.max(0, minP - pad),
+                            minValue: Math.max(1, minP - pad),
                             maxValue: maxP + pad,
                         }},
                     }};
@@ -276,21 +480,29 @@ def generate_dashboard_html():
 
         chart.priceScale('volume_scale').applyOptions({{
             scaleMargins: {{
-                top: 0.8,
+                top: 0.82,
                 bottom: 0,
             }},
+            visible: false,
         }});
 
-        window.addEventListener('resize', () => {{
-            chart.applyOptions({{
-                width: chartContainer.clientWidth,
-                height: chartContainer.clientHeight
-            }});
+        // Responsive Resize Observer
+        const resizeObserver = new ResizeObserver(entries => {{
+            if (!entries || entries.length === 0) return;
+            const {{ width, height }} = entries[0].contentRect;
+            chart.applyOptions({{ width: Math.floor(width), height: Math.floor(height) }});
         }});
-        chart.applyOptions({{
-            width: chartContainer.clientWidth,
-            height: chartContainer.clientHeight
-        }});
+        resizeObserver.observe(chartContainer);
+
+        function formatMeso(val) {{
+            if (val === null || val === undefined || isNaN(val)) return '--';
+            if (val >= 100000000) {{
+                return (val / 100000000).toFixed(2) + ' 億';
+            }} else if (val >= 10000) {{
+                return (val / 10000).toFixed(0) + ' 萬';
+            }}
+            return val.toLocaleString();
+        }}
 
         function updateChart() {{
             if (!currentItem || !allData[currentItem]) return;
@@ -310,7 +522,7 @@ def generate_dashboard_html():
             const vData = candles.map(c => ({{
                 time: c.time,
                 value: c.volume,
-                color: c.close >= c.open ? 'rgba(38, 166, 154, 0.5)' : 'rgba(239, 83, 80, 0.5)'
+                color: c.close >= c.open ? 'rgba(38, 166, 154, 0.45)' : 'rgba(239, 83, 80, 0.45)'
             }}));
 
             // Strictly ascending
@@ -320,40 +532,63 @@ def generate_dashboard_html():
             candleSeries.setData(cData);
             volumeSeries.setData(vData);
 
-            // Force price scale and volume scale to auto-zoom to the selected item
+            // Auto-scale price axis tightly
             chart.priceScale('right').applyOptions({{
-                autoScale: true,
-            }});
-            chart.priceScale('volume_scale').applyOptions({{
                 autoScale: true,
             }});
 
             if (candles.length > 0) {{
                 const latest = candles[candles.length - 1];
-                valClose.textContent = latest.close.toLocaleString() + " 楓幣";
+                valClose.textContent = formatMeso(latest.close);
                 valClose.className = "metric-val " + (latest.close >= latest.open ? "c-up" : "c-down");
-                valVwap.textContent = latest.vwap.toLocaleString() + " 楓幣";
+                valVwap.textContent = formatMeso(latest.vwap);
                 valVol.textContent = latest.volume.toLocaleString() + " 張";
 
+                // Max/Min in dataset
+                const allHighs = candles.map(c => c.high);
+                const allLows = candles.map(c => c.low);
+                const maxH = Math.max(...allHighs);
+                const minL = Math.min(...allLows);
+                valRange.textContent = formatMeso(maxH) + " / " + formatMeso(minL);
+
                 if (lowestAsk) {{
-                    valAsk.textContent = lowestAsk.toLocaleString() + " 楓幣";
+                    valAsk.textContent = formatMeso(lowestAsk);
                     const spread = ((lowestAsk - latest.close) / latest.close) * 100;
                     valSpread.textContent = (spread >= 0 ? "+" : "") + spread.toFixed(1) + "%";
                     valSpread.className = "metric-val " + (spread >= 0 ? "c-up" : "c-down");
                 }} else {{
-                    valAsk.textContent = "無現有掛賣";
+                    valAsk.textContent = "無掛賣";
                     valSpread.textContent = "N/A";
+                    valSpread.className = "metric-val";
                 }}
             }} else {{
                 valClose.textContent = "無成交數據";
+                valClose.className = "metric-val";
                 valVwap.textContent = "--";
                 valVol.textContent = "--";
-                valAsk.textContent = lowestAsk ? lowestAsk.toLocaleString() + " 楓幣" : "--";
+                valRange.textContent = "--";
+                valAsk.textContent = lowestAsk ? formatMeso(lowestAsk) : "--";
                 valSpread.textContent = "--";
+                valSpread.className = "metric-val";
             }}
 
             chart.timeScale().fitContent();
         }}
+
+        // Dynamic Crosshair / Touch Legend Update
+        chart.subscribeCrosshairMove((param) => {{
+            if (!param || !param.time || !param.seriesData) return;
+            const cItem = param.seriesData.get(candleSeries);
+            const vItem = param.seriesData.get(volumeSeries);
+            if (cItem) {{
+                valClose.textContent = formatMeso(cItem.close);
+                valClose.className = "metric-val " + (cItem.close >= cItem.open ? "c-up" : "c-down");
+                valRange.textContent = formatMeso(cItem.high) + " / " + formatMeso(cItem.low);
+            }}
+            if (vItem) {{
+                valVol.textContent = vItem.value.toLocaleString() + " 張";
+            }}
+        }});
 
         selector.addEventListener("change", (e) => {{
             currentItem = e.target.value;

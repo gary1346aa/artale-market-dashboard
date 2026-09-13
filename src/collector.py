@@ -338,11 +338,11 @@ class MarketCollector:
                 except Exception:
                     pass
 
-    def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2, target_tab: str = "both"):
+    def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2, target_tab: str = "both", start_index: int = 1):
         """
         Iterates over a list of items and captures market data with multi-instance quota tracking and auto-retry.
         """
-        logger.info(f"Starting catalog collection scan for {len(keywords)} items (Target Mode: '{target_tab}')...")
+        logger.info(f"Starting catalog collection scan for {len(keywords)} items (Target Mode: '{target_tab}', Start Index: {start_index})...")
         if not self.ensure_focus():
             logger.error(f"Cannot initialize or focus instance '{self.current_instance}'. Halting scan.")
             return
@@ -356,6 +356,8 @@ class MarketCollector:
 
         failed_items = []
         for idx, item in enumerate(keywords, 1):
+            if idx < start_index:
+                continue
             if not self.is_auction_open():
                 logger.warning(f"Auction House was not open before item [{idx}/{len(keywords)}] ('{item}'). Restoring...")
                 if not self.ensure_focus():

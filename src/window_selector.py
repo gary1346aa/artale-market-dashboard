@@ -48,7 +48,7 @@ class WindowSelector:
                 })
             return True
 
-        EnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
+        EnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
         ctypes.windll.user32.EnumWindows(EnumProc(enum_cb), 0)
         return windows
 

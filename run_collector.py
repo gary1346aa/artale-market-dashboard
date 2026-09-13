@@ -73,6 +73,13 @@ Examples:
         help="Specific LDPlayer instance to target (e.g. '槍手', '祈禱機'). Default is auto-rotation based on available quota."
     )
 
+    parser.add_argument(
+        "--start-index",
+        type=int,
+        default=1,
+        help="1-based index in watchlist to start/resume scanning from (default: 1)"
+    )
+
     args = parser.parse_args()
 
     # Determine target window manager
@@ -98,7 +105,7 @@ Examples:
                 return
             with open(watchlist_path, "r", encoding="utf-8") as f:
                 items = json.load(f)
-            collector.run_catalog_scan(items, max_pages_per_query=args.pages, target_tab=args.target_tab)
+            collector.run_catalog_scan(items, max_pages_per_query=args.pages, target_tab=args.target_tab, start_index=args.start_index)
 
 
 if __name__ == "__main__":

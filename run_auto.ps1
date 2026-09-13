@@ -1,10 +1,11 @@
-﻿param (
+param (
     [string]$Watchlist = "items_watchlist.json",
     [string]$Query = "",
     [int]$Pages = 2,
     [string]$TargetTab = "trades",
     [string]$Instance = "槍手",
-    [string]$Script = ""
+    [string]$Script = "",
+    [int]$StartIndex = 1
 )
 
 $ErrorActionPreference = "Continue"
@@ -27,6 +28,7 @@ if (Test-Path "run_config.json") {
         if ($cfg.TargetTab -and -not $PSBoundParameters.ContainsKey('TargetTab')) { $TargetTab = $cfg.TargetTab }
         if ($cfg.Instance -and -not $PSBoundParameters.ContainsKey('Instance')) { $Instance = $cfg.Instance }
         if ($cfg.Script -and -not $PSBoundParameters.ContainsKey('Script')) { $Script = $cfg.Script }
+        if ($null -ne $cfg.StartIndex -and -not $PSBoundParameters.ContainsKey('StartIndex')) { $StartIndex = $cfg.StartIndex }
         if ($cfg.OneShot) { Remove-Item "run_config.json" -Force }
     } catch {
         "Failed to parse run_config.json: $_" | Out-File $logFile -Append -Encoding utf8
@@ -40,13 +42,17 @@ if ($Script -ne "") {
 }
 
 $instLabel = if ($Instance -ne "") { " [Instance: $Instance]" } else { " [Instance: Auto-Rotate]" }
-$startMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel..."
+$resumeLabel = if ($StartIndex -gt 1) { " [Resuming from #$StartIndex]" } else { "" }
+$startMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel$resumeLabel..."
 Write-Host $startMsg -ForegroundColor Cyan
 $startMsg | Out-File $logFile -Append -Encoding utf8
 
 $extraArgs = @()
 if ($Instance -ne "") {
     $extraArgs += @("--instance", $Instance)
+}
+if ($StartIndex -gt 1) {
+    $extraArgs += @("--start-index", $StartIndex)
 }
 
 if ($Query -ne "") {

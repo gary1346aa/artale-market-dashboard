@@ -100,12 +100,21 @@ class KlineAggregator:
                 if not unit_price or unit_price < 1000:
                     continue
 
-                # Detect bundle trade where total price was stored as unit price
+                # 1. RMT Filter: Ignore token meso trades (< 35% of median when median > 500,000)
+                # Catches token cash-transfers like 1, 14, 66, 4,444, 7,777, 499,999, etc.
+                if median_p > 500000 and unit_price < median_p * 0.35:
+                    continue
+
+                # 2. Bundle & Spike Filter: Handle high outliers (> 1.8x median)
                 if median_p > 0 and unit_price > median_p * 1.8:
                     ratio = round(unit_price / median_p)
-                    if 2 <= ratio <= 10:
+                    if 2 <= ratio <= 15:
+                        # Legitimate multi-item bundle: normalize unit price and scale volume
                         unit_price = round(unit_price / ratio)
                         qty = max(qty, ratio)
+                    elif unit_price > median_p * 3.0:
+                        # Non-bundle extreme outlier / meso laundering: omit from candles
+                        continue
 
                 total_price = r[2] or (qty * unit_price)
                 raw_time = r[3] or ""

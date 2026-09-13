@@ -14,15 +14,19 @@ echo Select collection mode:
 echo   [A] Ask Only (Active Listings)
 echo   [B] Trade Only (Matched Trades)
 echo   [C] Both (Ask + Trade) [Default]
+echo   [R] Resume from Item #54 (Both)
 echo   [D] Cancel
 echo.
-set /p mode="Enter choice [A, B, C, or D, default=C]: "
+set /p mode="Enter choice [A, B, C, R, or D, default=C]: "
 
 if /i "%mode%"=="D" (
     echo [Artale Tracker] Operation cancelled by user.
     exit /b
 )
-if /i "%mode%"=="A" (
+if /i "%mode%"=="R" (
+    echo [Artale Tracker] Resuming Full Collection from Item #54 (Both: Asks + Trades)...
+    powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both -StartIndex 54
+) else if /i "%mode%"=="A" (
     echo [Artale Tracker] Starting Ask Only Collection (Active Listings)...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab asks
 ) else if /i "%mode%"=="B" (

@@ -183,6 +183,7 @@ def generate_dashboard_html():
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Artale Market - 市場總覽 & 行情圖表</title>
+    <link rel="icon" type="image/png" href="data:image/png;base64,__ICON_BASE64__">
     <!-- Google Sans Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -249,6 +250,19 @@ def generate_dashboard_html():
 
         .brand-box:hover {
             opacity: 0.88;
+        }
+
+        .brand-logo-img {
+            width: 34px;
+            height: 34px;
+            object-fit: contain;
+            display: block;
+            filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45));
+            transition: transform 0.2s ease;
+        }
+
+        .brand-box:hover .brand-logo-img {
+            transform: scale(1.1) rotate(-3deg);
         }
 
         .brand-logo {
@@ -1021,6 +1035,11 @@ def generate_dashboard_html():
                 padding: 8px 12px;
             }
 
+            .brand-logo-img {
+                width: 30px;
+                height: 30px;
+            }
+
             #view-overview {
                 padding: 10px 12px;
                 gap: 12px;
@@ -1113,7 +1132,7 @@ def generate_dashboard_html():
     <!-- App Universal Header -->
     <header class="app-header">
         <div class="brand-box" onclick="showOverview()" title="返回市場總覽">
-            <span class="brand-logo">🍁</span>
+            <img class="brand-logo-img" src="data:image/png;base64,__ICON_BASE64__" alt="Artale Market" />
             <div class="brand-title">
                 <span>Artale Market</span>
             </div>
@@ -1987,9 +2006,13 @@ def generate_dashboard_html():
 </html>
 """
     # Replace tokens
+    icon_file = Path(__file__).resolve().parent / "assets" / "icon_base64.txt"
+    icon_b64 = icon_file.read_text(encoding="utf-8").strip() if icon_file.exists() else ""
+
     final_html = template.replace("/*__LIGHTWEIGHT_CHARTS_JS__*/", js_code)
     final_html = final_html.replace("__PAYLOAD_JSON__", json_str)
     final_html = final_html.replace("__LAST_SYNCED__", last_synced_time)
+    final_html = final_html.replace("__ICON_BASE64__", icon_b64)
 
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(final_html)

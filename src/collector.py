@@ -10,7 +10,15 @@ from .quota_manager import QuotaManager
 from .aggregator import KlineAggregator
 from .instance_launcher import InstanceLauncher
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+import sys
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("ArtaleCollector")
 
 class MarketCollector:

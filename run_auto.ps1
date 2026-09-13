@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$Watchlist = "items_watchlist.json",
     [string]$Query = "",
     [int]$Pages = 2,
@@ -8,12 +8,16 @@ param (
 )
 
 $ErrorActionPreference = "Continue"
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $env:PYTHONIOENCODING = "utf-8"
+$env:PYTHONUNBUFFERED = "1"
+
 Set-Location "C:\Users\gary1\artale_market_tracker"
 $python = "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe"
 $logFile = "C:\Users\gary1\collector_run.log"
 
-# Support dynamic config overrides when executed via Task Scheduler
+# Support dynamic config overrides when executed via Task Scheduler or daemon
 if (Test-Path "run_config.json") {
     try {
         $cfg = Get-Content "run_config.json" -Raw -Encoding utf8 | ConvertFrom-Json
@@ -45,23 +49,21 @@ if ($Instance -ne "") {
     $extraArgs += @("--instance", $Instance)
 }
 
-$env:PYTHONUNBUFFERED = "1"
-
 if ($Query -ne "") {
-    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs | Tee-Object -FilePath $logFile -Append
 } else {
-    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs | Tee-Object -FilePath $logFile -Append
 }
 
 $aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."
 Write-Host $aggMsg -ForegroundColor Cyan
 $aggMsg | Out-File $logFile -Append -Encoding utf8
-& $python -u -m src.aggregator 2>&1 | Tee-Object -FilePath $logFile -Append
+& $python -u -m src.aggregator | Tee-Object -FilePath $logFile -Append
 
 $dashMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Updating dashboard.html and docs/index.html..."
 Write-Host $dashMsg -ForegroundColor Cyan
 $dashMsg | Out-File $logFile -Append -Encoding utf8
-& $python -u dashboard.py 2>&1 | Tee-Object -FilePath $logFile -Append
+& $python -u dashboard.py | Tee-Object -FilePath $logFile -Append
 
 # Automated GitHub Pages sync (if git remote origin is configured)
 $hasRemote = git remote 2>$null
@@ -69,9 +71,9 @@ if ($hasRemote -contains "origin") {
     $syncMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Syncing docs/index.html to GitHub Pages..."
     Write-Host $syncMsg -ForegroundColor Green
     $syncMsg | Out-File $logFile -Append -Encoding utf8
-    git add docs/index.html 2>&1 | Tee-Object -FilePath $logFile -Append
-    git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))" 2>&1 | Tee-Object -FilePath $logFile -Append
-    git push origin master 2>&1 | Tee-Object -FilePath $logFile -Append
+    git add docs/index.html
+    git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))"
+    git push origin master
 } else {
     $localMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] GitHub remote not configured; generated locally."
     Write-Host $localMsg -ForegroundColor Yellow

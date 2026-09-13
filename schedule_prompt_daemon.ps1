@@ -1,4 +1,4 @@
-﻿# Artale Market Tracker - 定時提醒與自動採集排程守護程式
+﻿# Artale Market Tracker - Scheduled Prompt Daemon
 param (
     [switch]$TestNow,
     [switch]$RunNow
@@ -9,6 +9,10 @@ $workDir = 'C:\Users\gary1\artale_market_tracker'
 Set-Location $workDir
 $logFile = "$workDir\scheduler_daemon.log"
 
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$env:PYTHONIOENCODING = 'utf-8'
+
 Add-Type -AssemblyName System.Windows.Forms
 
 function Write-Log([string]$msg) {
@@ -18,26 +22,26 @@ function Write-Log([string]$msg) {
 }
 
 function Get-NextStandardTarget([datetime]$baseTime) {
-    $todayMidnight = $baseTime.Date                 # 00:00 今日
-    $todayNoon = $todayMidnight.AddHours(12)        # 12:00 今日
-    $tomorrowMidnight = $todayMidnight.AddDays(1)   # 00:00 明日
-    $tomorrowNoon = $todayNoon.AddDays(1)           # 12:00 明日
+    $todayMidnight = $baseTime.Date                 # 00:00 Today
+    $todayNoon = $todayMidnight.AddHours(12)        # 12:00 Today
+    $tomorrowMidnight = $todayMidnight.AddDays(1)   # 00:00 Tomorrow
+    $tomorrowNoon = $todayNoon.AddDays(1)           # 12:00 Tomorrow
 
     $candidates = @($todayMidnight, $todayNoon, $tomorrowMidnight, $tomorrowNoon) | Where-Object { $_ -gt $baseTime } | Sort-Object
     return $candidates[0]
 }
 
 function Show-Prompt([string]$promptTimeStr) {
-    $title = 'Artale Market Tracker - Market Collection'
+    $title = 'Artale Market Tracker - Scheduled Collection'
     $lines = @(
-        '[Artale Market Update / 行情定時採集]',
+        '[Artale Market Tracker - Scheduled Update]',
         '',
-        "現在是預定的市場行情採集時間 ($promptTimeStr)。",
-        '是否允許開始執行拍賣場自動掃描？',
-        '(採集期間會自動切換與操作遊戲視窗約 2~3 分鐘)',
+        "It is now the scheduled collection time ($promptTimeStr).",
+        'Would you like to start the auction collection scan now?',
+        '(The scan will automate the game window for about 2-3 minutes)',
         '',
-        '[是 (Yes)]  立即開始採集並同步至線上網站',
-        '[否 (No)]   我正在使用電腦 (延後 30 分鐘後再次提醒)'
+        '[Yes]  Start collection now and sync to online dashboard',
+        '[No]   I am using the PC (Postpone and ask again in 30 minutes)'
     )
     $text = $lines -join [Environment]::NewLine
 
@@ -64,18 +68,18 @@ function Show-Toast([string]$msg) {
 }
 
 Write-Log '=========================================='
-Write-Log 'Artale 定時採集守護程式已啟動。'
-Write-Log '固定排程目標時間：每日 12:00 PM (中午) 及 12:00 AM (午夜)'
+Write-Log 'Artale Market Tracker Daemon Started.'
+Write-Log 'Scheduled Target Times: Daily at 12:00 PM (Noon) and 12:00 AM (Midnight)'
 Write-Log '=========================================='
 
 if ($TestNow) {
     $nextPrompt = Get-Date
-    Write-Log '[測試模式] 立即觸發詢問視窗...'
+    Write-Log '[TEST MODE] Triggering test prompt dialog immediately...'
 } elseif ($RunNow) {
     $nextPrompt = (Get-Date).AddSeconds(-1)
 } else {
     $nextPrompt = Get-NextStandardTarget (Get-Date)
-    Write-Log "下次詢問時間：$($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
+    Write-Log "Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
 }
 
 while ($true) {
@@ -83,31 +87,31 @@ while ($true) {
 
     if ($now -ge $nextPrompt) {
         $promptTimeStr = $now.ToString('HH:mm')
-        Write-Log '跳出詢問視窗 (等待使用者回應)...'
+        Write-Log 'Prompt dialog opened. Waiting for user response...'
 
         $res = Show-Prompt $promptTimeStr
 
         if ($res -eq [System.Windows.Forms.DialogResult]::Yes) {
-            Write-Log '使用者點選 [是]！正在啟動 run_auto.ps1 執行拍賣場採集與同步...'
+            Write-Log 'User clicked [Yes]. Launching run_auto.ps1 in visible terminal...'
             try {
                 Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`"" -Wait
-                Write-Log '採集與 GitHub Pages 同步流程執行完畢！'
-                Show-Toast '拍賣場行情採集與 GitHub Pages 同步已順利完成！'
+                Write-Log 'Collection and GitHub Pages sync completed successfully!'
+                Show-Toast 'Market collection and GitHub Pages sync completed successfully!'
             } catch {
-                Write-Log "執行 run_auto.ps1 時發生異常: $_"
-                Show-Toast "採集執行過程發生錯誤，請查看日誌：$logFile"
+                Write-Log "Error executing run_auto.ps1: $_"
+                Show-Toast "Collection process encountered an error. Check log: $logFile"
             }
 
-            # 重新計算下一個固定目標時間 (12:00 或 00:00)
+            # Recalculate next standard target (12:00 or 00:00)
             $nextPrompt = Get-NextStandardTarget (Get-Date)
-            Write-Log "排程已重設。下次詢問時間：$($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
+            Write-Log "Schedule reset. Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
 
         } else {
-            # 使用者點選 [否]
+            # User clicked [No]
             $nextPrompt = (Get-Date).AddMinutes(30)
             $nextStr = $nextPrompt.ToString('HH:mm')
-            Write-Log "使用者選擇延後。已延後 30 分鐘，下次詢問時間：$($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
-            Show-Toast "已為您延後採集排程。`n系統將在 30 分鐘後 ($nextStr) 再次詢問您。"
+            Write-Log "User clicked [No]. Postponed 30 minutes. Next prompt at: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
+            Show-Toast "Collection postponed.`nYou will be prompted again in 30 minutes (at $nextStr)."
         }
     }
 

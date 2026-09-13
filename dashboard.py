@@ -17,7 +17,7 @@ def classify_item(name: str) -> str:
     cash_keywords = ['喇叭', '瞬移', '突襲', '背包', '護身符', '初始化', '加持器', '漫天花雨', '飄雪結晶']
     if any(k in name for k in cash_keywords):
         return '現金道具'
-    acc_keywords = ['墜飾', '眼部裝飾', '臉部裝飾', '耳環', '戒指']
+    acc_keywords = ['墜飾', '眼部裝飾', '臉部裝飾', '耳環', '戒指', '腰帶']
     if any(k in name for k in acc_keywords):
         return '飾品卷'
     weapon_keywords = ['拳套', '弓', '弩', '單手劍', '雙手劍', '矛', '槍', '短劍', '手套攻擊力', '指虎', '火槍', '短杖', '長杖']

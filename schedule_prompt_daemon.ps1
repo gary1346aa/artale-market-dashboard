@@ -31,28 +31,41 @@ function Get-NextStandardTarget([datetime]$baseTime) {
     return $candidates[0]
 }
 
-function Show-Prompt([string]$promptTimeStr) {
+function Show-PromptDialog([string]$promptTimeStr) {
     $title = 'Artale Market Tracker - Scheduled Collection'
     $lines = @(
         '[Artale Market Tracker - Scheduled Update]',
         '',
         "It is now the scheduled collection time ($promptTimeStr).",
-        'Would you like to start the auction collection scan now?',
-        '(The scan will automate the game window for about 2-3 minutes)',
+        'Please choose how you want to collect auction data:',
         '',
-        '[Yes]  Start collection now and sync to online dashboard',
-        '[No]   I am using the PC (Postpone and ask again in 30 minutes)'
+        '  [Yes]    Full Update (Both: Asks + Trades)  [~5-6 mins]',
+        '           Updates K-Lines, Lowest Asks, and Spreads',
+        '',
+        '  [No]     Fast Update (Trades Only)          [~2.5 mins]',
+        '           Fastest scan, updates K-Line candlestick charts only',
+        '',
+        '  [Cancel] Postpone 30 Minutes',
+        '           (I am currently using the PC, ask again later)'
     )
     $text = $lines -join [Environment]::NewLine
 
-    return [System.Windows.Forms.MessageBox]::Show(
+    $res = [System.Windows.Forms.MessageBox]::Show(
         $text,
         $title,
-        [System.Windows.Forms.MessageBoxButtons]::YesNo,
+        [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
         [System.Windows.Forms.MessageBoxIcon]::Question,
         [System.Windows.Forms.MessageBoxDefaultButton]::Button1,
         [System.Windows.Forms.MessageBoxOptions]::ServiceNotification
     )
+
+    if ($res -eq [System.Windows.Forms.DialogResult]::Yes) {
+        return 'both'
+    } elseif ($res -eq [System.Windows.Forms.DialogResult]::No) {
+        return 'trades'
+    } else {
+        return 'postpone'
+    }
 }
 
 function Show-Toast([string]$msg) {
@@ -87,16 +100,16 @@ while ($true) {
 
     if ($now -ge $nextPrompt) {
         $promptTimeStr = $now.ToString('HH:mm')
-        Write-Log 'Prompt dialog opened. Waiting for user response...'
+        Write-Log 'Prompt dialog opened. Waiting for user choice...'
 
-        $res = Show-Prompt $promptTimeStr
+        $choice = Show-PromptDialog $promptTimeStr
 
-        if ($res -eq [System.Windows.Forms.DialogResult]::Yes) {
-            Write-Log 'User clicked [Yes]. Launching run_auto.ps1 in visible terminal...'
+        if ($choice -in @('both', 'trades')) {
+            Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 in visible terminal..."
             try {
-                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`"" -Wait
-                Write-Log 'Collection and GitHub Pages sync completed successfully!'
-                Show-Toast 'Market collection and GitHub Pages sync completed successfully!'
+                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab $choice" -Wait
+                Write-Log "Collection ($choice) and GitHub Pages sync completed successfully!"
+                Show-Toast "Market collection ($choice) and GitHub Pages sync completed successfully!"
             } catch {
                 Write-Log "Error executing run_auto.ps1: $_"
                 Show-Toast "Collection process encountered an error. Check log: $logFile"
@@ -107,10 +120,10 @@ while ($true) {
             Write-Log "Schedule reset. Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
 
         } else {
-            # User clicked [No]
+            # User clicked [Cancel] or closed dialog
             $nextPrompt = (Get-Date).AddMinutes(30)
             $nextStr = $nextPrompt.ToString('HH:mm')
-            Write-Log "User clicked [No]. Postponed 30 minutes. Next prompt at: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
+            Write-Log "User chose to postpone. Next prompt at: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
             Show-Toast "Collection postponed.`nYou will be prompted again in 30 minutes (at $nextStr)."
         }
     }

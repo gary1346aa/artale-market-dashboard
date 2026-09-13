@@ -26,6 +26,9 @@ def classify_item(name: str) -> str:
     armor_keywords = ['頭盔', '鞋子', '手套']
     if any(k in name for k in armor_keywords):
         return '防具卷'
+    material_keywords = ['時間碎片', '母礦', '水晶']
+    if any(k in name for k in material_keywords):
+        return '材料'
     return '其他'
 
 def get_scroll_rate(name: str) -> str:
@@ -731,6 +734,12 @@ def generate_dashboard_html():
             border: 1px solid rgba(240, 185, 11, 0.25);
         }
 
+        .cat-mat {
+            background-color: rgba(76, 175, 80, 0.15);
+            color: #81c784;
+            border: 1px solid rgba(76, 175, 80, 0.25);
+        }
+
         .item-title-text {
             font-weight: 600;
             color: #ffffff;
@@ -1140,6 +1149,7 @@ def generate_dashboard_html():
                     <button class="pill-btn" data-cat="武器卷">武器卷 (<span id="count-wpn">0</span>)</button>
                     <button class="pill-btn" data-cat="防具卷">防具卷 (<span id="count-arm">0</span>)</button>
                     <button class="pill-btn" data-cat="現金道具">現金道具 (<span id="count-cash">0</span>)</button>
+                    <button class="pill-btn" data-cat="材料">材料 (<span id="count-mat">0</span>)</button>
                 </div>
             </div>
             <div class="toolbar-row" id="rate-row">
@@ -1337,6 +1347,7 @@ def generate_dashboard_html():
                 case "武器卷": return "cat-wpn";
                 case "防具卷": return "cat-arm";
                 case "現金道具": return "cat-cash";
+                case "材料": return "cat-mat";
                 default: return "cat-acc";
             }
         }
@@ -1347,6 +1358,7 @@ def generate_dashboard_html():
                 case "武器卷": return "武器";
                 case "防具卷": return "防具";
                 case "現金道具": return "現金";
+                case "材料": return "材料";
                 default: return cat;
             }
         }
@@ -1448,7 +1460,7 @@ def generate_dashboard_html():
                 }
 
                 // Rate
-                if (currentCat !== "現金道具" && currentRate !== "all") {
+                if (currentCat !== "現金道具" && currentCat !== "材料" && currentRate !== "all") {
                     if (it.rate !== currentRate) return false;
                 }
 
@@ -1543,6 +1555,7 @@ def generate_dashboard_html():
             document.getElementById("count-wpn").textContent = summaryList.filter(s => s.category === "武器卷").length;
             document.getElementById("count-arm").textContent = summaryList.filter(s => s.category === "防具卷").length;
             document.getElementById("count-cash").textContent = summaryList.filter(s => s.category === "現金道具").length;
+            document.getElementById("count-mat").textContent = summaryList.filter(s => s.category === "材料").length;
             updateFavoriteCounts();
         }
 
@@ -1813,7 +1826,7 @@ def generate_dashboard_html():
                 currentCat = btn.getAttribute("data-cat");
 
                 const rateRow = document.getElementById("rate-row");
-                if (currentCat === "現金道具") {
+                if (currentCat === "現金道具" || currentCat === "材料") {
                     rateRow.style.display = "none";
                     currentRate = "all";
                 } else {

@@ -600,6 +600,14 @@ def generate_dashboard_html():
             color: var(--text-main);
         }
 
+        .search-highlight {
+            background-color: rgba(240, 185, 11, 0.22);
+            color: #f0b90b;
+            font-weight: 700;
+            padding: 0 1px;
+            border-radius: 2px;
+        }
+
         /* Market Table */
         .table-card {
             background-color: var(--bg-card);
@@ -1445,6 +1453,119 @@ def generate_dashboard_html():
             container.innerHTML = html;
         }
 
+        // ----------------------------------------------------
+        // Smart Search Engine (Multi-Token, Boundary, Subsequence & Highlight)
+        // ----------------------------------------------------
+        function tokenizeSearchQuery(query) {
+            if (!query) return [];
+            // Normalize full-width characters (e.g. ３０ -> 30) and lowercase
+            let q = query.trim().toLowerCase()
+                .replace(/[\uff01-\uff5e]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+
+            // Insert boundary spaces between Hanzi and Alphanumeric / Digits (e.g. 腰帶30 -> 腰帶 30)
+            q = q.replace(/([\u4e00-\u9fa5])([0-9a-zA-Z])/g, '$1 $2')
+                 .replace(/([0-9a-zA-Z%])([\u4e00-\u9fa5])/g, '$1 $2');
+
+            // Split by whitespace and normalize trailing '%'
+            return q.split(/\\s+/)
+                    .filter(t => t.length > 0)
+                    .map(t => (t.length > 1 && t.endsWith('%')) ? t.slice(0, -1) : t);
+        }
+
+        function mergeIntervals(intervals) {
+            if (!intervals || intervals.length === 0) return [];
+            intervals.sort((a, b) => a[0] - b[0]);
+            const merged = [intervals[0].slice()];
+            for (let i = 1; i < intervals.length; i++) {
+                const last = merged[merged.length - 1];
+                const curr = intervals[i];
+                if (curr[0] <= last[1]) {
+                    last[1] = Math.max(last[1], curr[1]);
+                } else {
+                    merged.push(curr.slice());
+                }
+            }
+            return merged;
+        }
+
+        function highlightMatchedText(rawText, intervals) {
+            if (!intervals || intervals.length === 0) return rawText;
+            const merged = mergeIntervals(intervals);
+            let out = "";
+            let cursor = 0;
+            for (const [start, end] of merged) {
+                out += rawText.slice(cursor, start);
+                out += '<mark class="search-highlight">' + rawText.slice(start, end) + '</mark>';
+                cursor = end;
+            }
+            out += rawText.slice(cursor);
+            return out;
+        }
+
+        function smartMatch(query, rawName) {
+            if (!query) return { matched: true, intervals: [] };
+            const qClean = query.trim().toLowerCase();
+            const nameLower = rawName.toLowerCase();
+
+            // Tier 1: Direct Substring Match
+            const exactIdx = nameLower.indexOf(qClean);
+            if (exactIdx !== -1) {
+                return {
+                    matched: true,
+                    intervals: [[exactIdx, exactIdx + qClean.length]]
+                };
+            }
+
+            // Tier 2: Token Conjunction (AND Logic with script-boundary splitting)
+            const tokens = tokenizeSearchQuery(query);
+            if (tokens.length > 0) {
+                let allTokensMatch = true;
+                const tokenIntervals = [];
+
+                for (const token of tokens) {
+                    const idx = nameLower.indexOf(token);
+                    if (idx === -1) {
+                        allTokensMatch = false;
+                        break;
+                    }
+                    // Collect all occurrences of this token for highlighting
+                    let startPos = 0;
+                    while ((startPos = nameLower.indexOf(token, startPos)) !== -1) {
+                        tokenIntervals.push([startPos, startPos + token.length]);
+                        startPos += token.length;
+                    }
+                }
+
+                if (allTokensMatch) {
+                    return {
+                        matched: true,
+                        intervals: tokenIntervals
+                    };
+                }
+            }
+
+            // Tier 3: Subsequence Match (Fuzzy Shorthand, e.g. 腰力30 -> 腰帶力量卷軸30%)
+            const pSeq = qClean.replace(/\\s+/g, "");
+            if (pSeq.length >= 2) {
+                let pIdx = 0;
+                const seqIntervals = [];
+                for (let sIdx = 0; sIdx < nameLower.length && pIdx < pSeq.length; sIdx++) {
+                    if (nameLower[sIdx] === pSeq[pIdx]) {
+                        seqIntervals.push([sIdx, sIdx + 1]);
+                        pIdx++;
+                    }
+                }
+                if (pIdx === pSeq.length) {
+                    return {
+                        matched: true,
+                        intervals: seqIntervals
+                    };
+                }
+            }
+
+            return { matched: false, intervals: [] };
+        }
+
         // Render Market Table
         function renderTable() {
             const tbody = document.getElementById("market-table-body");
@@ -1464,9 +1585,13 @@ def generate_dashboard_html():
                     if (it.rate !== currentRate) return false;
                 }
 
-                // Search query
+                // Search query with smart matching
                 if (searchQuery) {
-                    if (!it.name.toLowerCase().includes(searchQuery)) return false;
+                    const res = smartMatch(searchQuery, it.name);
+                    if (!res.matched) return false;
+                    it._highlightIntervals = res.intervals;
+                } else {
+                    it._highlightIntervals = null;
                 }
 
                 return true;
@@ -1510,6 +1635,9 @@ def generate_dashboard_html():
                 const spreadText = it.spread_pct !== null ? `${it.spread_pct > 0 ? '+' : ''}${it.spread_pct.toFixed(1)}%` : "--";
                 const spreadClass = it.spread_pct !== null ? (it.spread_pct <= 0 ? "c-up" : "c-down") : "text-dim";
                 const rangeStr = (it.low_24 > 0 && it.high_24 > 0) ? `${formatMesoCompact(it.low_24)} ~ ${formatMesoCompact(it.high_24)}` : "--";
+                const titleHtml = (searchQuery && it._highlightIntervals)
+                    ? highlightMatchedText(it.name, it._highlightIntervals)
+                    : it.name;
 
                 html += `
                 <tr onclick="showChart('${it.name}')">
@@ -1521,7 +1649,7 @@ def generate_dashboard_html():
                     <td>
                         <div class="item-name-cell">
                             <span class="cat-tag ${getCatTagClass(it.category)}">${getCatShortName(it.category)}</span>
-                            <span class="item-title-text">${it.name}</span>
+                            <span class="item-title-text">${titleHtml}</span>
                         </div>
                     </td>
                     <td style="text-align: right;">

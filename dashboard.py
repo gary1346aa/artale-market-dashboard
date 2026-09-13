@@ -1,6 +1,7 @@
 import sqlite3
 import json
 import webbrowser
+import calendar
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict
@@ -48,7 +49,8 @@ def export_dashboard_data() -> Dict:
                 for r in rows:
                     raw_t = r[0]
                     try:
-                        t_val = int(datetime.strptime(raw_t, "%Y-%m-%d %H:%M:%S").timestamp())
+                        # Use calendar.timegm so Lightweight Charts UTC getters render the exact game clock hour (e.g. 17:00, 18:00, 19:00) without 8-hour timezone shift
+                        t_val = int(calendar.timegm(datetime.strptime(raw_t, "%Y-%m-%d %H:%M:%S").timetuple()))
                     except Exception:
                         t_val = raw_t
                     if t_val in seen:

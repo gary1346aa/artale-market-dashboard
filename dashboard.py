@@ -235,13 +235,23 @@ def generate_dashboard_html():
         /* Top Header Navigation */
         .app-header {
             background-color: var(--bg-card);
-            padding: 10px 20px;
+            padding: 10px 24px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
             border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
             z-index: 20;
+            width: 100%;
+        }
+
+        .header-inner {
+            width: 100%;
+            max-width: 1240px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
         }
 
         .brand-box {
@@ -315,10 +325,18 @@ def generate_dashboard_html():
         #view-overview {
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            padding: 16px 20px;
+            padding: 20px 24px 48px;
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            align-items: center;
+        }
+
+        .overview-content {
+            width: 100%;
+            max-width: 1240px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
         }
 
         /* Top 4 Summary Cards */
@@ -327,6 +345,7 @@ def generate_dashboard_html():
             grid-template-columns: repeat(4, 1fr);
             gap: 14px;
             flex-shrink: 0;
+            width: 100%;
         }
 
         .summary-card {
@@ -337,6 +356,7 @@ def generate_dashboard_html():
             display: flex;
             flex-direction: column;
             gap: 8px;
+            min-width: 0;
             transition: border-color 0.2s ease, transform 0.15s ease;
         }
 
@@ -377,9 +397,10 @@ def generate_dashboard_html():
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 5px 6px;
-            border-radius: 5px;
+            padding: 6px 8px;
+            border-radius: 6px;
             cursor: pointer;
+            gap: 8px;
             transition: background-color 0.15s ease;
         }
 
@@ -391,7 +412,16 @@ def generate_dashboard_html():
             display: flex;
             flex-direction: column;
             gap: 2px;
+            flex: 1;
             min-width: 0;
+        }
+
+        .card-row-title-box {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+            width: 100%;
         }
 
         .card-row-name {
@@ -401,12 +431,16 @@ def generate_dashboard_html():
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 140px;
+            min-width: 0;
+            flex: 1;
         }
 
         .card-row-sub {
             font-size: 0.68rem;
             color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .card-row-right {
@@ -990,16 +1024,18 @@ def generate_dashboard_html():
         /* Footer Attribution */
         .app-footer {
             background-color: var(--bg-card);
-            border-top: 1px solid var(--border-color);
-            padding: 7px 20px;
-            padding-bottom: max(7px, env(safe-area-inset-bottom));
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 20px;
+            padding-bottom: max(10px, env(safe-area-inset-bottom));
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 0.72rem;
             color: var(--text-sub);
             flex-shrink: 0;
-            z-index: 10;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .footer-status {
@@ -1021,9 +1057,16 @@ def generate_dashboard_html():
         /* ----------------------------------------------------
            RESPONSIVE MOBILE STYLES (<= 768px)
            ---------------------------------------------------- */
+        @media (max-width: 1280px) {
+            .overview-content, .header-inner {
+                max-width: 100%;
+            }
+        }
+
         @media (max-width: 1024px) {
             .top-cards-grid {
                 grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
             }
         }
 
@@ -1038,7 +1081,10 @@ def generate_dashboard_html():
             }
 
             #view-overview {
-                padding: 10px 12px;
+                padding: 10px 12px 30px;
+            }
+
+            .overview-content {
                 gap: 12px;
             }
 
@@ -1159,25 +1205,28 @@ def generate_dashboard_html():
 <body>
     <!-- App Universal Header -->
     <header class="app-header">
-        <div class="brand-box" onclick="showOverview()" title="返回市場總覽">
-            <img class="brand-logo-img" src="data:image/png;base64,__ICON_BASE64__" alt="Artale Market" />
-            <div class="brand-title">
-                <span>Artale Market</span>
+        <div class="header-inner">
+            <div class="brand-box" onclick="showOverview()" title="返回市場總覽">
+                <img class="brand-logo-img" src="data:image/png;base64,__ICON_BASE64__" alt="Artale Market" />
+                <div class="brand-title">
+                    <span>Artale Market</span>
+                </div>
             </div>
-        </div>
-        <div class="search-box-wrapper">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="input-search" class="search-input" placeholder="搜尋道具..." autocomplete="off" />
-            <button id="btn-clear-search" class="search-clear">✕</button>
+            <div class="search-box-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="input-search" class="search-input" placeholder="搜尋道具..." autocomplete="off" />
+                <button id="btn-clear-search" class="search-clear">✕</button>
+            </div>
         </div>
     </header>
 
     <!-- VIEW 1: BINANCE-STYLE MARKET OVERVIEW -->
     <div id="view-overview" class="view-container">
-        <!-- Top 4 Summary Cards -->
-        <div class="top-cards-grid" id="top-cards-container">
-            <!-- Rendered by JS -->
-        </div>
+        <div class="overview-content">
+            <!-- Top 4 Summary Cards -->
+            <div class="top-cards-grid" id="top-cards-container">
+                <!-- Rendered by JS -->
+            </div>
 
         <!-- Filter Toolbar -->
         <div class="overview-toolbar">
@@ -1240,6 +1289,7 @@ def generate_dashboard_html():
                 <span>© 2026 By <strong>5AM G8G</strong></span>
             </div>
         </footer>
+        </div>
     </div>
 
     <!-- VIEW 2: TRADINGVIEW CANDLESTICK CHART -->
@@ -1467,9 +1517,9 @@ def generate_dashboard_html():
                     html += `
                         <div class="card-row" onclick="showChart('${it.name}')">
                             <div class="card-row-left">
-                                <div class="card-row-name" title="${it.name}">
+                                <div class="card-row-title-box">
                                     <span class="cat-tag ${getCatTagClass(it.category)}">${getCatShortName(it.category)}</span>
-                                    ${it.name}
+                                    <span class="card-row-name" title="${it.name}">${it.name}</span>
                                 </div>
                                 <div class="card-row-sub">${c.renderSub(it)}</div>
                             </div>

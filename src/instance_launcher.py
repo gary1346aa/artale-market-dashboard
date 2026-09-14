@@ -139,34 +139,47 @@ class InstanceLauncher:
             time.sleep(0.5)
 
             pyautogui.hotkey("alt", "7")
-            # Poll every 2s for up to 25s to see if Alt + 7 navigates into Auction House
-            for _ in range(12):
+            for _ in range(8):
                 time.sleep(2)
                 if self.is_auction_open(win_mgr):
                     logger.info(f"SUCCESS: Instance '{instance_name}' reached Auction House via Alt + 7!")
                     return True
-            logger.warning(f"Alt + 7 timed out from Free Market. Falling back to Alt + 9...")
+
+            # If Alt + 7 didn't open, dismiss possible modal dialogs (e.g. NPC or "在此地圖內無法使用")
+            logger.warning(f"Alt + 7 did not open Auction House immediately. Attempting to dismiss possible dialogs (ESC/Space)...")
+            pyautogui.press("esc")
+            time.sleep(1.0)
+            pyautogui.press("space")
+            time.sleep(1.0)
+            pyautogui.hotkey("alt", "7")
+            for _ in range(8):
+                time.sleep(2)
+                if self.is_auction_open(win_mgr):
+                    logger.info(f"SUCCESS: Instance '{instance_name}' reached Auction House via Alt + 7 after dismissing dialogs!")
+                    return True
+
+            logger.error(f"STRICT SAFETY: Instance '{instance_name}' is still in Free Market. Alt + 9 is ONLY valid on Home Page and will NOT be run in-game.")
+            return False
         else:
-            logger.info(f"Instance '{instance_name}' is NOT in the Free Market (Home Screen / outside Artale). STRICT SAFETY RULE: Skipping Alt + 7 to avoid misclicking apps!")
-
-        # 5. Fallback: Full boot & navigate macro: 開遊戲到拍賣場 (Alt + 9)
-        logger.info(f"Triggering full recovery '開遊戲到拍賣場' (Alt + 9)...")
-        win_mgr.bring_to_front()
-        time.sleep(0.5)
-
-        pyautogui.hotkey("alt", "9")
-        logger.info(f"Sent Alt + 9. Waiting up to {max_macro_wait}s for macro to enter Auction House...")
-
-        start_t = time.time()
-        # Poll every 10s after an initial 60s
-        time.sleep(60)
-        while time.time() - start_t < max_macro_wait:
+            # 5. Only if outside Artale / on Android Home Screen: execute '開遊戲到拍賣場' (Alt + 9)
+            logger.info(f"Instance '{instance_name}' is outside Artale / on Home Screen. Alt + 7 is skipped.")
+            logger.info(f"Triggering Home Page recovery '開遊戲到拍賣場' (Alt + 9)...")
             win_mgr.bring_to_front()
-            if self.is_auction_open(win_mgr):
-                elapsed = int(time.time() - start_t)
-                logger.info(f"SUCCESS: Instance '{instance_name}' reached Auction House after {elapsed}s!")
-                return True
-            time.sleep(10)
+            time.sleep(0.5)
 
-        logger.error(f"Failed to reach Auction House on '{instance_name}' within {max_macro_wait}s.")
-        return False
+            pyautogui.hotkey("alt", "9")
+            logger.info(f"Sent Alt + 9. Waiting up to {max_macro_wait}s for macro to enter Auction House...")
+
+            start_t = time.time()
+            # Poll every 10s after an initial 60s
+            time.sleep(60)
+            while time.time() - start_t < max_macro_wait:
+                win_mgr.bring_to_front()
+                if self.is_auction_open(win_mgr):
+                    elapsed = int(time.time() - start_t)
+                    logger.info(f"SUCCESS: Instance '{instance_name}' reached Auction House after {elapsed}s!")
+                    return True
+                time.sleep(10)
+
+            logger.error(f"Failed to reach Auction House on '{instance_name}' within {max_macro_wait}s.")
+            return False

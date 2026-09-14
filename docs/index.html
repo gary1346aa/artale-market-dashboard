@@ -662,8 +662,22 @@
         #view-chart {
             display: none;
             flex-direction: column;
+            align-items: center;
             height: 100%;
             overflow: hidden;
+            width: 100%;
+        }
+
+        .chart-content {
+            width: 100%;
+            max-width: 1240px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            border-left: 1px solid var(--border-color);
+            border-right: 1px solid var(--border-color);
+            background-color: var(--bg-main);
         }
 
         .chart-control-bar {
@@ -882,8 +896,10 @@
            RESPONSIVE MOBILE STYLES (<= 768px)
            ---------------------------------------------------- */
         @media (max-width: 1280px) {
-            .overview-content, .header-inner {
+            .overview-content, .header-inner, .chart-content {
                 max-width: 100%;
+                border-left: none;
+                border-right: none;
             }
         }
 
@@ -991,6 +1007,14 @@
                 padding: 6px 12px;
                 padding-bottom: max(6px, env(safe-area-inset-bottom));
                 font-size: 0.68rem;
+            }
+
+            .btn-back-text {
+                display: none;
+            }
+
+            .btn-back-overview {
+                padding: 6px 10px;
             }
         }
 
@@ -1107,7 +1131,7 @@
         <footer class="app-footer">
             <div class="footer-status">
                 <span class="status-dot"></span>
-                <span>Last Updated: <strong class="sync-time">2026-09-15 01:07</strong></span>
+                <span>Last Updated: <strong class="sync-time">2026-09-15 01:19</strong></span>
             </div>
             <div class="footer-credit">
                 <span>© 2026 By <strong>5AM G8G</strong></span>
@@ -1118,70 +1142,72 @@
 
     <!-- VIEW 2: TRADINGVIEW CANDLESTICK CHART -->
     <div id="view-chart" class="view-container">
-        <!-- Sub-Header Chart Controls -->
-        <div class="chart-control-bar">
-            <div class="chart-control-left">
-                <button class="btn-back-overview" onclick="showOverview()" title="返回市場總覽">
-                    <span class="arrow-icon">←</span> 返回市場總覽
-                </button>
-                <div class="chart-active-item">
-                    <span class="chart-active-title" id="chart-item-title">--</span>
-                    <span class="cat-tag" id="chart-item-tag">--</span>
+        <div class="chart-content">
+            <!-- Sub-Header Chart Controls -->
+            <div class="chart-control-bar">
+                <div class="chart-control-left">
+                    <button class="btn-back-overview" onclick="showOverview()" title="返回市場總覽">
+                        <span class="arrow-icon">←</span> <span class="btn-back-text">返回市場總覽</span>
+                    </button>
+                    <div class="chart-active-item">
+                        <span class="cat-tag" id="chart-item-tag">--</span>
+                        <span class="chart-active-title" id="chart-item-title">--</span>
+                    </div>
+                </div>
+                <div class="chart-control-right">
+                    <div class="tf-group">
+                        <button class="btn-tf active" data-tf="1h">1H</button>
+                        <button class="btn-tf" data-tf="4h">4H</button>
+                        <button class="btn-tf" data-tf="1d">1D</button>
+                    </div>
+                    <div class="chart-select-box">
+                        <select id="item-selector" class="item-dropdown"></select>
+                    </div>
                 </div>
             </div>
-            <div class="chart-control-right">
-                <div class="tf-group">
-                    <button class="btn-tf active" data-tf="1h">1H</button>
-                    <button class="btn-tf" data-tf="4h">4H</button>
-                    <button class="btn-tf" data-tf="1d">1D</button>
+
+            <!-- Metric Strip -->
+            <div class="metric-bar">
+                <div class="metric">
+                    <span class="metric-label">最新成交</span>
+                    <span class="metric-val" id="val-close">--</span>
                 </div>
-                <div class="chart-select-box">
-                    <select id="item-selector" class="item-dropdown"></select>
+                <div class="metric">
+                    <span class="metric-label">最低掛賣</span>
+                    <span class="metric-val c-ask" id="val-ask">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">買賣價差</span>
+                    <span class="metric-val" id="val-spread">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">成交均價 (VWAP)</span>
+                    <span class="metric-val" id="val-vwap">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">24h 成交量</span>
+                    <span class="metric-val" id="val-vol">--</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">24h 價格區間</span>
+                    <span class="metric-val" id="val-range">--</span>
                 </div>
             </div>
+
+            <!-- Chart Canvas -->
+            <div id="chart-container"></div>
+
+            <!-- Chart Footer -->
+            <footer class="app-footer">
+                <div class="footer-status">
+                    <span class="status-dot"></span>
+                    <span>Last Updated: <strong class="sync-time">2026-09-15 01:19</strong></span>
+                </div>
+                <div class="footer-credit">
+                    <span>© 2026 By <strong>5AM G8G</strong></span>
+                </div>
+            </footer>
         </div>
-
-        <!-- Metric Strip -->
-        <div class="metric-bar">
-            <div class="metric">
-                <span class="metric-label">最新成交 (Close)</span>
-                <span class="metric-val" id="val-close">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">最低掛賣 (Lowest Ask)</span>
-                <span class="metric-val c-ask" id="val-ask">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">買賣價差 (Spread)</span>
-                <span class="metric-val" id="val-spread">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">成交均價 (VWAP)</span>
-                <span class="metric-val" id="val-vwap">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">成交量 (Volume)</span>
-                <span class="metric-val" id="val-vol">--</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">區間最高/低 (H/L)</span>
-                <span class="metric-val" id="val-range">--</span>
-            </div>
-        </div>
-
-        <!-- Chart Canvas -->
-        <div id="chart-container"></div>
-
-        <!-- Chart Footer -->
-        <footer class="app-footer">
-            <div class="footer-status">
-                <span class="status-dot"></span>
-                <span>Last Updated: <strong class="sync-time">2026-09-15 01:07</strong></span>
-            </div>
-            <div class="footer-credit">
-                <span>© 2026 By <strong>5AM G8G</strong></span>
-            </div>
-        </footer>
     </div>
 
     <!-- Frontend Application Logic -->

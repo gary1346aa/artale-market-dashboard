@@ -1,4 +1,4 @@
-﻿# Artale Market Tracker - Scheduled Prompt Daemon
+# Artale Market Tracker - Scheduled Prompt Daemon
 param (
     [switch]$TestNow,
     [switch]$RunNow,
@@ -132,7 +132,7 @@ function Show-PromptDialog([string]$promptTimeStr, [int]$timeout = 30) {
 
             <!-- Button D: Cancel / Postpone -->
             <Button Name="BtnD" Height="38" Background="#E5E7EB" Foreground="#1F2937" BorderThickness="1" BorderBrush="#D1D5DB" Cursor="Hand">
-                <TextBlock Text="[D]  Cancel (Ask Again in 30 Mins)   [I am currently using the PC]" FontWeight="SemiBold" FontSize="12"/>
+                <TextBlock Text="[D]  Postpone (Ask Again in 30 Mins)" FontWeight="SemiBold" FontSize="12"/>
             </Button>
         </StackPanel>
     </Grid>

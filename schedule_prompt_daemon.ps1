@@ -22,13 +22,16 @@ function Write-Log([string]$msg) {
 }
 
 function Get-NextStandardTarget([datetime]$baseTime) {
-    $todayMidnight = $baseTime.Date                 # 00:00 Today
-    $todayNoon = $todayMidnight.AddHours(12)        # 12:00 Today
-    $tomorrowMidnight = $todayMidnight.AddDays(1)   # 00:00 Tomorrow
-    $tomorrowNoon = $todayNoon.AddDays(1)           # 12:00 Tomorrow
-
-    $candidates = @($todayMidnight, $todayNoon, $tomorrowMidnight, $tomorrowNoon) | Where-Object { $_ -gt $baseTime } | Sort-Object
-    return $candidates[0]
+    # Aligns to 2-hour scan schedule: 00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00
+    $startOfDay = $baseTime.Date
+    $slots = @()
+    for ($h = 0; $h -lt 48; $h += 2) {
+        $slot = $startOfDay.AddHours($h)
+        if ($slot -gt $baseTime) {
+            $slots += $slot
+        }
+    }
+    return $slots[0]
 }
 
 Add-Type -AssemblyName PresentationFramework
@@ -36,9 +39,12 @@ Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
 function Show-PromptDialog([string]$promptTimeStr) {
-    # Dynamically read current watchlist item count
+    # Dynamically read current watchlist and due item count
     $watchlistPath = "$workDir\items_watchlist.json"
-    $itemCount = 84
+    $pythonExe = "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe"
+    $itemCount = 105
+    $dueCount = 0
+
     if (Test-Path $watchlistPath) {
         try {
             $wl = Get-Content $watchlistPath -Raw -Encoding utf8 | ConvertFrom-Json
@@ -50,6 +56,14 @@ function Show-PromptDialog([string]$promptTimeStr) {
         } catch {
             $itemCount = 105
         }
+    }
+
+    try {
+        $cmd = "from src.tier_evaluator import get_due_items; due, _, _ = get_due_items(); print(len(due))"
+        $res = & $pythonExe -c $cmd
+        $dueCount = [int]$res.Trim()
+    } catch {
+        $dueCount = 18
     }
 
     try {
@@ -70,7 +84,7 @@ function Show-PromptDialog([string]$promptTimeStr) {
 
         <StackPanel Grid.Row="0">
             <TextBlock Text="Artale Market Tracker - Scheduled Update" FontSize="16" FontWeight="Bold" Foreground="#111827"/>
-            <TextBlock Text="Scheduled time ($promptTimeStr) reached. Target watchlist: $itemCount items." FontSize="12" Foreground="#4B5563" Margin="0,2,0,0"/>
+            <TextBlock Text="Scheduled time ($promptTimeStr) reached. Due for collection: $dueCount items (out of $itemCount total)." FontSize="12" Foreground="#4B5563" Margin="0,2,0,0"/>
             <TextBlock Text="Please choose an option to proceed (or press A / B / C / D):" FontSize="13" Foreground="#1F2937" Margin="0,6,0,0"/>
         </StackPanel>
 
@@ -78,8 +92,24 @@ function Show-PromptDialog([string]$promptTimeStr) {
             <!-- Button A: Ask -->
             <Button Name="BtnA" Height="50" Margin="0,0,0,8" Background="#2563EB" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[A]  Ask Only (Active Listings)" FontWeight="Bold" FontSize="13"/>
-                    <TextBlock Text="Scans active listings only. Updates Lowest Asks &amp; Spreads." FontSize="11" Opacity="0.9"/>
+                    <TextBlock Text="[A]  Ask Only (Active Listings - Due Items)" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="Scans active listings for $dueCount due items. Updates Lowest Asks &amp; Spreads." FontSize="11" Opacity="0.9"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Button B: Trade -->
+            <Button Name="BtnB" Height="50" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,5,12,5">
+                    <TextBlock Text="[B]  Trade Only (Matched Trades - Due Items)" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="Scans matched trades for $dueCount due items. Updates K-Line charts." FontSize="11" Opacity="0.9"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Button C: Both -->
+            <Button Name="BtnC" Height="50" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,5,12,5">
+                    <TextBlock Text="[C]  Both (Ask + Trade - Due Items)" FontWeight="Bold" FontSize="13"/>
+                    <TextBlock Text="Scans both tabs for $dueCount due items. Re-evaluates tiers and syncs dashboard." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
 
@@ -192,20 +222,18 @@ function Show-PromptDialog([string]$promptTimeStr) {
 }
 
 function Show-Toast([string]$msg) {
-    $title = 'Artale Market Tracker'
-    [System.Windows.Forms.MessageBox]::Show(
-        $msg,
-        $title,
-        [System.Windows.Forms.MessageBoxButtons]::OK,
-        [System.Windows.Forms.MessageBoxIcon]::Information,
-        [System.Windows.Forms.MessageBoxDefaultButton]::Button1,
-        [System.Windows.Forms.MessageBoxOptions]::ServiceNotification
-    ) | Out-Null
+    try {
+        $wshell = New-Object -ComObject Wscript.Shell
+        # Auto-dismiss after 6 seconds so the daemon never hangs
+        $wshell.Popup($msg, 6, "Artale Market Tracker", 64) | Out-Null
+    } catch {
+        Write-Log "Toast notification error: $_"
+    }
 }
 
 Write-Log '=========================================='
 Write-Log 'Artale Market Tracker Daemon Started.'
-Write-Log 'Scheduled Target Times: Daily at 12:00 PM (Noon) and 12:00 AM (Midnight)'
+Write-Log 'Scheduled Target Times: Every 2 Hours (00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00)'
 Write-Log '=========================================='
 
 if ($TestNow) {
@@ -228,19 +256,19 @@ while ($true) {
         $choice = Show-PromptDialog $promptTimeStr
 
         if ($choice -in @('both', 'trades', 'asks')) {
-            Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 in visible terminal..."
+            Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 for due items..."
             try {
-                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab $choice" -Wait
+                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab $choice -Due" -Wait
                 Write-Log "Collection ($choice) and GitHub Pages sync completed successfully!"
-                Show-Toast "Market collection ($choice) and GitHub Pages sync completed successfully!"
             } catch {
                 Write-Log "Error executing run_auto.ps1: $_"
                 Show-Toast "Collection process encountered an error. Check log: $logFile"
             }
 
-            # Recalculate next standard target (12:00 or 00:00)
+            # Recalculate next standard target (every 2 hours)
             $nextPrompt = Get-NextStandardTarget (Get-Date)
             Write-Log "Schedule reset. Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
+            Show-Toast "Market collection ($choice) completed successfully!`nNext scheduled scan at: $($nextPrompt.ToString('HH:mm'))."
 
         } else {
             # User clicked [Cancel] or closed dialog

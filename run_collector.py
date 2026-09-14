@@ -86,11 +86,6 @@ Examples:
         help="Scan only items that are currently due for collection based on their tier interval and last_updated timestamp"
     )
     parser.add_argument(
-        "--auto-loop",
-        action="store_true",
-        help="Run continuously in autonomous mode: scans due items, re-evaluates tiers, updates dashboard, and sleeps until the next item is due"
-    )
-    parser.add_argument(
         "--start-index",
         type=int,
         default=1,
@@ -123,64 +118,21 @@ Examples:
             return
 
         from src.tier_evaluator import get_due_items
-        import subprocess
-        import time
-        from datetime import datetime, timedelta
 
-        # 1. Autonomous Continuous Loop Mode
-        if args.auto_loop:
-            print("=====================================================")
-            print("  Artale Market Tracker - Autonomous Loop Started    ")
-            print("=====================================================")
-            while True:
-                due_items, wait_sec, next_item = get_due_items(watchlist_path)
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                if due_items:
-                    print(f"\n[{now_str}] AUTO Mode: Found {len(due_items)} due items. Starting collection...")
-                    collector.run_catalog_scan(due_items, max_pages_per_query=args.pages, target_tab=args.target_tab)
-
-                    # Trigger aggregator and dashboard rebuild
-                    try:
-                        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Updating K-line candles and dashboard...")
-                        subprocess.run([sys.executable, "-m", "src.aggregator"], check=False)
-                        subprocess.run([sys.executable, "dashboard.py"], check=False)
-                    except Exception as e:
-                        print(f"Post-collection update error: {e}")
-                else:
-                    print(f"[{now_str}] AUTO Mode: All items are up to date.")
-
-                # Recalculate next due schedule
-                _, wait_sec, next_item = get_due_items(watchlist_path)
-                sleep_duration = max(60.0, min(wait_sec, 3600.0))
-                wake_dt = datetime.now() + timedelta(seconds=sleep_duration)
-                print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Next run in {sleep_duration/60:.1f} mins at {wake_dt.strftime('%H:%M:%S')} (Earliest due: '{next_item}'). Waiting...")
-
-                # Responsive interruptible sleep
-                start_t = time.time()
-                try:
-                    while time.time() - start_t < sleep_duration:
-                        time.sleep(min(5.0, sleep_duration - (time.time() - start_t)))
-                except KeyboardInterrupt:
-                    print("\n[AUTO Mode] Stopped by user.")
-                    break
-            return
-
-        # 2. Due-Only One-Pass Mode
+        # 1. Due-Only Collection Mode (Scans only items whose time elapsed exceeds their tier interval)
         if args.due:
             due_items, wait_sec, next_item = get_due_items(watchlist_path)
             if not due_items:
-                print(f"No items currently due for collection. Next due item '{next_item}' is in {wait_sec/60:.1f} minutes.")
+                print(f"All items are up to date! Next item '{next_item}' will be due in {wait_sec/60:.1f} minutes.")
                 return
             print(f"AUTO Mode: Found {len(due_items)} due items. Starting collection...")
             collector.run_catalog_scan(due_items, max_pages_per_query=args.pages, target_tab=args.target_tab, start_index=args.start_index)
             _, next_wait, next_item = get_due_items(watchlist_path)
             if next_item:
-                wake_dt = datetime.now() + timedelta(seconds=next_wait)
-                print(f"Round completed. Next collection due in {next_wait/60:.1f} minutes at {wake_dt.strftime('%H:%M:%S')} (item: '{next_item}').")
+                print(f"Round completed. Next item '{next_item}' due in {next_wait/60:.1f} minutes.")
             return
 
-        # 3. Standard / Tier-Filtered Catalog Scan
+        # 2. Standard / Tier-Filtered Catalog Scan
         with open(watchlist_path, "r", encoding="utf-8") as f:
             raw_wl = json.load(f)
 

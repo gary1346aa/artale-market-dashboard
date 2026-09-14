@@ -7,8 +7,7 @@ param (
     [string]$Script = "",
     [int]$StartIndex = 1,
     [int]$Tier = 0,
-    [switch]$Due,
-    [switch]$AutoLoop
+    [switch]$Due
 )
 
 $ErrorActionPreference = "Continue"
@@ -62,9 +61,6 @@ if ($Tier -gt 0) {
 }
 if ($Due) {
     $extraArgs += @("--due")
-}
-if ($AutoLoop) {
-    $extraArgs += @("--auto-loop")
 }
 
 if ($Query -ne "") {

@@ -73,12 +73,15 @@ def run_tests():
 
     assert sample1.exists() and sample2.exists(), "Sample screenshots must exist"
 
-    # Reset test database for clean verification
+    # Use dedicated temporary test database - NEVER touch production market.db
+    TEST_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "test_market.db"
+    if TEST_DB_PATH.exists():
+        TEST_DB_PATH.unlink()
+    import src.database
+    src.database.DB_PATH = TEST_DB_PATH
     init_db()
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM active_listings")
-        conn.execute("DELETE FROM matched_trades")
-        conn.commit()
+
+
 
     # Create collector with simulated window manager
     mock_sim = MockWindowManager([sample1, sample2])
@@ -101,7 +104,7 @@ def run_tests():
     print("\n==================================================")
     print("3. VERIFYING DATABASE PERSISTENCE & ANALYTICS")
     print("==================================================")
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(TEST_DB_PATH) as conn:
         cursor = conn.cursor()
         
         # Check active_listings
@@ -112,7 +115,7 @@ def run_tests():
         print(f"    - Lowest ask unit price: {min_p:,}")
         print(f"    - Highest ask unit price: {max_p:,}")
         print(f"    - Total order book depth: {sum_p:,}")
-        assert active_cnt == 7
+        assert active_cnt == 7, f"Expected 7 listings saved, got {active_cnt}"
 
         # Check matched_trades
         cursor.execute("SELECT count(*), min(matched_unit_price), max(matched_unit_price), sum(total_matched_price) FROM matched_trades")
@@ -122,21 +125,14 @@ def run_tests():
         print(f"    - Lowest matched trade: {min_t:,}")
         print(f"    - Highest matched trade: {max_t:,}")
         print(f"    - Total traded volume: {sum_t:,}")
-        assert trade_cnt == 7
+        assert trade_cnt == 7, f"Expected 7 trades saved, got {trade_cnt}"
 
-        # Insert a simulated matched trade for '頭盔防禦卷軸10%' to verify cross-market spread analytics
-        cursor.execute("""
-            INSERT INTO matched_trades (item_name, quantity, matched_unit_price, total_matched_price, trade_time)
-            VALUES ('頭盔防禦卷軸10%', 1, 88000, 88000, '2026-09-12 15:30')
-        """)
-        conn.commit()
-
-        # Test cross-table spread query (Items present in both tables)
+        # Cross-market spread calculation
         cursor.execute("""
             SELECT 
                 a.item_name,
                 MIN(a.unit_price) as lowest_ask,
-                m.matched_unit_price as recent_trade,
+                m.matched_unit_price,
                 ROUND(((MIN(a.unit_price) - m.matched_unit_price) * 100.0 / m.matched_unit_price), 2) as spread_pct
             FROM active_listings a
             JOIN matched_trades m ON a.item_name = m.item_name
@@ -148,6 +144,16 @@ def run_tests():
             status = "🚨 UNDERVALUED / SNIPE" if spread < 0 else "NORMAL / PREMIUM"
             print(f"    * {name}: Lowest Ask={ask:,} | Recent Trade={trade:,} | Spread={spread}% ({status})")
         assert len(spreads) > 0, "Spread query should return at least one matched item"
+
+    # Cleanup temporary test database
+    collector.shutdown()
+    import gc
+    gc.collect()
+    if TEST_DB_PATH.exists():
+        try:
+            TEST_DB_PATH.unlink()
+        except PermissionError:
+            pass
 
     print("\n==================================================")
     print("ALL TESTS COMPLETED SUCCESSFULLY! ALL PASS.")

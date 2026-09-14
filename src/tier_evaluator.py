@@ -86,9 +86,12 @@ class TierEvaluator:
         else:
             return 4
 
-    def evaluate_item_velocity(self, item_name: str, cursor: sqlite3.Cursor) -> Tuple[int, Optional[str]]:
+    def evaluate_item_velocity(self, item_name: str, cursor: sqlite3.Cursor, current_tier: int = 3) -> Tuple[int, Optional[str]]:
         """
-        Queries matched_trades & active_listings for item_name and calculates (tier, latest_captured_at).
+        Calculates peak trading velocity, daily averages, and safe overflow thresholds.
+        If no trade records exist in the database, preserves the item's current tier.
+        Returns:
+            (tier: int, latest_capture_timestamp_str: Optional[str])
         """
         cursor.execute("""
             SELECT trade_time, captured_at
@@ -112,7 +115,8 @@ class TierEvaluator:
 
         if not rows:
             clean_ts = self._format_timestamp(latest_cap_at)
-            return 4, clean_ts
+            # Never demote an item without trade evidence; preserve its current configured tier
+            return current_tier, clean_ts
 
         total_trades = len(rows)
         hour_counts = defaultdict(int)
@@ -163,7 +167,7 @@ class TierEvaluator:
 
             for item in order:
                 old_tier = existing_data.get(item, {}).get("tier", 3)
-                new_tier, latest_db_ts = self.evaluate_item_velocity(item, cursor)
+                new_tier, latest_db_ts = self.evaluate_item_velocity(item, cursor, current_tier=old_tier)
 
                 last_updated = existing_data.get(item, {}).get("last_updated") or latest_db_ts
 

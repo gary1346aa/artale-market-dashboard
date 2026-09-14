@@ -43,6 +43,17 @@ if ($Script -ne "") {
     exit $LASTEXITCODE
 }
 
+# Automated database backup before any collection/aggregation run
+if (Test-Path "data\market.db") {
+    $backupDir = "data\backups"
+    if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+    $ts = (Get-Date).ToString("yyyyMMdd_HHmmss")
+    $backupFile = Join-Path $backupDir "market_backup_$ts.db"
+    Copy-Item "data\market.db" $backupFile -Force
+    # Retain the 30 most recent snapshots
+    Get-ChildItem $backupDir -Filter "market_backup_*.db" | Sort-Object CreationTime -Descending | Select-Object -Skip 30 | Remove-Item -Force
+}
+
 $instLabel = if ($Instance -ne "") { " [Instance: $Instance]" } else { " [Instance: Auto-Rotate]" }
 $resumeLabel = if ($StartIndex -gt 1) { " [Resuming from #$StartIndex]" } else { "" }
 $startMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel$resumeLabel..."

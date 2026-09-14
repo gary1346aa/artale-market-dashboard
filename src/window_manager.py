@@ -2,6 +2,8 @@ import ctypes
 import ctypes.wintypes
 from typing import Optional, Tuple, List, Dict
 import mss
+import time
+import pyautogui
 from PIL import Image
 
 class WindowManager:
@@ -47,9 +49,19 @@ class WindowManager:
                     buffer = ctypes.create_unicode_buffer(length + 1)
                     ctypes.windll.user32.GetWindowTextW(hwnd, buffer, length + 1)
                     title = buffer.value
+
+                    # Ignore Windows File Explorer, CMD, and terminal windows
+                    class_buf = ctypes.create_unicode_buffer(256)
+                    ctypes.windll.user32.GetClassNameW(hwnd, class_buf, 256)
+                    cls_name = class_buf.value
+                    if cls_name in ("CabinetWClass", "ExploreWClass", "ConsoleWindowClass"):
+                        return True
+                    if "market_tracker" in title.lower() or "cmd.exe" in title.lower():
+                        return True
+
                     for kw in self.title_keywords:
                         if kw.lower() in title.lower():
-                            found_hwnds.append((hwnd, title))
+                            found_hwnds.append((hwnd, title, kw))
                             break
             return True
 
@@ -57,6 +69,8 @@ class WindowManager:
         ctypes.windll.user32.EnumWindows(EnumWindowsProc(enum_windows_callback), 0)
 
         if found_hwnds:
+            # Prioritize exact instance name match (first title_keyword) over generic emulator titles
+            found_hwnds.sort(key=lambda x: 0 if (self.title_keywords and x[2] == self.title_keywords[0]) else 1)
             self.hwnd = found_hwnds[0][0]
             return self.hwnd
         return None
@@ -120,6 +134,18 @@ class WindowManager:
         ctypes.windll.user32.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
         ctypes.windll.user32.SetWindowPos(self.hwnd, -2, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
         ctypes.windll.user32.BringWindowToTop(self.hwnd)
+
+        # Physically click title bar to guarantee Windows foreground activation over File Explorer / CMD
+        bounds = self.get_window_rect()
+        if bounds:
+            title_x = bounds.get("raw_left", bounds.get("left", 0)) + 250
+            title_y = bounds.get("raw_top", max(0, bounds.get("top", 0) - 51)) + 15
+            try:
+                pyautogui.click(title_x, title_y)
+                time.sleep(0.3)
+            except Exception:
+                pass
+
         return True
 
     def to_screen_coords(self, ref_x: int, ref_y: int) -> Optional[Tuple[int, int]]:

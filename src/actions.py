@@ -112,37 +112,34 @@ def is_input_bar_open(win_mgr) -> bool:
 
 def clear_search_bar(win_mgr=None):
     """
-    Triggers LDPlayer's recorded macro '刪除商城搜索列' (Alt + 8) to flawlessly
-    erase any previous text in the auction search bar.
-    Macro duration is 9.197 seconds.
+    Triggers LDPlayer's recorded macro '點搜尋全選刪除' (Alt + 8) to
+    click the search box, select all, and backspace.
+    Macro duration is ~2.08 seconds.
+    Leaves the search box open, empty, and focused.
     """
     if win_mgr:
         win_mgr.bring_to_front()
-        time.sleep(0.3)
-        bounds = win_mgr.get_window_rect()
-        if bounds:
-            cx = bounds["left"] + 640
-            cy = bounds["top"] + 360
-            pyautogui.click(cx, cy)
-            time.sleep(0.3)
+        time.sleep(0.2)
     pyautogui.hotkey("alt", "8")
-    time.sleep(9.5)
+    time.sleep(2.3)
 
 def clear_and_paste(box_x: int, box_y: int, text: str, confirm_pt=None, win_mgr=None):
     """
-    1. Triggers '刪除商城搜索列' (Alt + 8) to erase existing text cleanly.
-    2. Syncs target text into Windows clipboard and triggers LDPlayer host->guest sync.
-    3. Clicks search box to open clean bottom input bar.
+    Fast query input flow with new Alt+8 macro:
+    1. Triggers '點搜尋全選刪除' (Alt + 8) to clear existing text.
+    2. Syncs target text into Windows clipboard and forces LDPlayer host->guest sync.
+    3. Clicks search box to activate input.
     4. Pastes verified text via Ctrl+V.
-    5. Removes the phantom trailing glyph.
-    6. Commits input bar via Enter and 確定 button.
-    7. Submits search in Artale.
+    5. Removes phantom trailing glyph (Backspace).
+    6. Commits input bar via Enter and confirm button.
+    7. Submits search in Artale via Enter.
     """
-    # 1. Clear search bar completely using the user's recorded macro
+    clean_text = text.strip()
+
+    # 1. Trigger Alt+8 macro: clears existing search bar text (~2.3s)
     clear_search_bar(win_mgr=win_mgr)
 
-    # 2. Sync Windows clipboard into LDPlayer
-    clean_text = text.strip()
+    # 2. Sync Windows clipboard into LDPlayer AFTER Alt+8
     if win_mgr:
         sync_clipboard_and_focus(win_mgr, clean_text)
     else:
@@ -152,28 +149,50 @@ def clear_and_paste(box_x: int, box_y: int, text: str, confirm_pt=None, win_mgr=
                 f"could not be verified to contain '{clean_text}'."
             )
 
-    # 3. Click search input box
+    # 3. Click search box to ensure focus and open clean input bar
     human_click(box_x, box_y)
-    time.sleep(0.8)
+    time.sleep(0.6)
 
-    # 3. Paste verified text
+    # 4. Paste verified text
     pyautogui.hotkey("ctrl", "v")
     time.sleep(0.4)
 
-    # 4. Remove the phantom trailing glyph added by emulator clipboard sync
+    # 5. Remove phantom trailing glyph added by emulator clipboard sync
     pyautogui.press("backspace")
     time.sleep(0.2)
 
-    # 5. Commit input bar via Enter and confirm button
+    # 6. Commit input bar via Enter and confirm button
     pyautogui.press("enter")
     time.sleep(0.3)
     if confirm_pt:
         human_click(confirm_pt[0], confirm_pt[1])
-        time.sleep(0.6)
+        time.sleep(0.5)
 
-    # 6. Press Enter in game to submit search
+    # 7. Press Enter in game to submit search
     pyautogui.press("enter")
-    time.sleep(1.5)
+    time.sleep(1.2)
+
+def submit_existing_search(box_x: int, box_y: int, confirm_pt=None):
+    """
+    Submits a search when the search box already contains the desired keyword
+    (e.g., when switching from asks tab to trades tab in 'both' mode).
+    Bypasses Alt+8, clipboard sync, and pasting entirely.
+    """
+    # 1. Click search box to ensure focus
+    human_click(box_x, box_y)
+    time.sleep(0.4)
+
+    # 2. Commit input bar if open
+    pyautogui.press("enter")
+    time.sleep(0.3)
+    if confirm_pt:
+        human_click(confirm_pt[0], confirm_pt[1])
+        time.sleep(0.5)
+
+    # 3. Press Enter in game to submit search
+    pyautogui.press("enter")
+    time.sleep(1.2)
+
 
 
 

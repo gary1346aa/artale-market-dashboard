@@ -51,27 +51,34 @@ class InstanceLauncher:
     def is_auction_open(self, win_mgr: WindowManager) -> bool:
         """
         Verifies if the Artale Auction House UI is currently open on screen.
+        Uses robust multi-landmark scoring across invariant UI elements:
+        1. White search box at top
+        2. Bright green '開始搜尋' button in left sidebar
+        3. Active cyan tab indicator ('查詢' or '市價')
+        4. Dark gray exit button '離開' at top right
         """
         frame = win_mgr.capture_frame()
         if not frame or frame.width < 500 or frame.height < 300:
             return False
         try:
-            # Multi-landmark verification:
-            # 1. Dark gray top modal border at (640, 50)
-            top_p = frame.getpixel((640, 50))[:3]
-            top_ok = abs(top_p[0] - top_p[1]) <= 5 and abs(top_p[1] - top_p[2]) <= 5 and 40 <= top_p[0] <= 60
+            # Landmark 1: White search box
+            box_ok = any(frame.getpixel((x, 48))[0] > 180 and frame.getpixel((x, 48))[1] > 180 for x in (240, 280, 320))
 
-            # 2. Dark gray table header at (955, 155)
-            hdr_p = frame.getpixel((955, 155))[:3]
-            hdr_ok = abs(hdr_p[0] - hdr_p[1]) <= 5 and abs(hdr_p[1] - hdr_p[2]) <= 5 and 25 <= hdr_p[0] <= 45
+            # Landmark 2: Green '開始搜尋' button (dominant green in sidebar button region)
+            green_ok = any(frame.getpixel((x, y))[1] > 110 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[2] + 35 
+                           for x in (290, 312, 335) for y in (540, 546, 552))
 
-            # 3. Cyan tab indicator at (244, 90) or (320, 90)
-            t1 = frame.getpixel((244, 90))[:3]
-            t2 = frame.getpixel((320, 90))[:3]
-            tab_ok = (t1[1] > 100 and t1[2] > 100) or (t2[1] > 100 and t2[2] > 100)
+            # Landmark 3: Active cyan tab ('查詢' x ~ 200 or '市價' x ~ 400 at y ~ 120)
+            cyan_ok = any(frame.getpixel((x, 120))[1] > 80 and frame.getpixel((x, 120))[2] > 80 and frame.getpixel((x, 120))[0] < 80
+                          for x in (180, 220, 260, 360, 400, 440))
 
-            return top_ok and hdr_ok and tab_ok
-        except Exception:
+            # Landmark 4: Dark top exit button / top bar border
+            top_ok = any(frame.getpixel((x, 48))[0] < 60 and frame.getpixel((x, 48))[1] < 60 for x in (780, 790, 800))
+
+            score = sum([box_ok, green_ok, cyan_ok, top_ok])
+            return score >= 2
+        except Exception as e:
+            logger.error(f"Error in launcher is_auction_open: {e}")
             return False
 
     def is_free_market(self, win_mgr: WindowManager) -> bool:
@@ -113,12 +120,21 @@ class InstanceLauncher:
         If verified inside Free Market, triggers Alt + 7.
         If on Home Screen or other screen, skips Alt + 7 and executes '開遊戲到拍賣場.record' via Alt + 9.
         """
-        # 1. Ensure emulator is running
+        # 1. Quick check: Is the window already open and inside Auction House?
+        win_mgr = WindowManager(title_keywords=[instance_name, "LDPlayer", "雷電模擬器", "雷電"])
+        hwnd = win_mgr.find_window()
+        if hwnd:
+            win_mgr.bring_to_front()
+            time.sleep(0.5)
+            if self.is_auction_open(win_mgr):
+                logger.info(f"Instance '{instance_name}' is already verified inside the Auction House.")
+                return True
+
+        # 2. Ensure emulator is running
         if not self.launch_instance(instance_name):
             return False
 
-        # 2. Find and focus window
-        win_mgr = WindowManager(title_keywords=[instance_name])
+        # 3. Find and focus window after boot
         hwnd = win_mgr.find_window()
         if not hwnd:
             logger.error(f"Could not find window HWND for instance '{instance_name}'.")
@@ -127,7 +143,7 @@ class InstanceLauncher:
         win_mgr.bring_to_front()
         time.sleep(1.0)
 
-        # 3. Check if already inside Auction House
+        # 4. Check if inside Auction House
         if self.is_auction_open(win_mgr):
             logger.info(f"Instance '{instance_name}' is already verified inside the Auction House.")
             return True

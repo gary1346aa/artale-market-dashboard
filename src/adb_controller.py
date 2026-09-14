@@ -92,36 +92,43 @@ class AdbController:
     def is_lobby_dialog_open(self, frame: Optional[Image.Image] = None) -> bool:
         """
         Checks if '前往大廳 是否結束遊玩並前往大廳？' exit dialog is open.
-        Detected via unique bright gold/orange [ 是 ] button at (780, 480).
+        When open, the entire screen has a ~60% dark translucent overlay,
+        dimming the normally pure-white search box (280, 48) to ~102 gray.
         """
         if frame is None:
             frame = self.screencap()
         if not frame:
             return False
         try:
-            p = frame.getpixel((780, 480))[:3]
-            return (p[0] > 200 and p[1] > 140 and p[2] < 80)
+            p_box = frame.getpixel((280, 48))[:3]
+            is_dimmed_box = (70 < p_box[0] < 140 and 70 < p_box[1] < 140 and 70 < p_box[2] < 140)
+            p_center = frame.getpixel((640, 180))[:3]
+            is_dimmed_center = (p_center[0] < 35 and p_center[1] < 35 and p_center[2] < 35)
+            return is_dimmed_box and is_dimmed_center
         except Exception:
             return False
 
     def is_error_modal_open(self, frame: Optional[Image.Image] = None) -> bool:
         """
         Checks if '沒有查詢的道具。' or similar warning modal is open.
-        Detected via yellow warning triangle icon at (640, 360).
+        Detected via yellow warning triangle icon at (635, 365) AND cyan box border at (640, 420).
         """
         if frame is None:
             frame = self.screencap()
         if not frame:
             return False
         try:
-            p = frame.getpixel((640, 360))[:3]
-            return (p[0] > 220 and p[1] > 170 and p[2] < 50)
+            p_tri = frame.getpixel((635, 365))[:3]
+            has_tri = (p_tri[0] > 220 and p_tri[1] > 170 and p_tri[2] < 50)
+            p_cyan = frame.getpixel((640, 420))[:3]
+            has_cyan = (p_cyan[1] > 110 and p_cyan[2] > 120 and p_cyan[0] < 60)
+            return has_tri and has_cyan
         except Exception:
             return False
 
     def handle_lingering_popups(self, frame: Optional[Image.Image] = None) -> bool:
         """
-        Actively checks for and cancels '前往大廳' or dismisses '沒有查詢的道具' modal.
+        Actively checks for and cancels '前往大廳' (via ESC) or dismisses '沒有查詢的道具' modal (via tap).
         Returns True if a popup was dismissed.
         """
         if frame is None:
@@ -136,8 +143,8 @@ class AdbController:
             return True
 
         if self.is_error_modal_open(frame):
-            logger.info(f"Dismissing error modal on {self.device_id} via ESC...")
-            self.press_esc()
+            logger.info(f"Dismissing error modal on {self.device_id} via neutral tap...")
+            self.tap(640, 580)
             time.sleep(0.4)
             return True
 
@@ -179,9 +186,9 @@ class AdbController:
             # Landmark 2: Green '開始搜尋' button around (312, 553)
             green_ok = any(frame.getpixel((x, y))[1] > 110 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[2] + 35 
                            for x in (290, 312, 335) for y in (540, 546, 552))
-            # Landmark 3: Active cyan tab ('查詢' x ~ 200 or '市價' x ~ 400 at y ~ 120)
-            cyan_ok = any(frame.getpixel((x, 120))[1] > 80 and frame.getpixel((x, 120))[2] > 80 and frame.getpixel((x, 120))[0] < 80
-                          for x in (180, 220, 260, 360, 400, 440))
+            # Landmark 3: Active cyan tab ('查詢' x ~ 200 or '市價' x ~ 400 at y ~ 90)
+            cyan_ok = any(frame.getpixel((x, y))[1] > 80 and frame.getpixel((x, y))[2] > 80 and frame.getpixel((x, y))[0] < 80
+                          for x in (200, 240, 400, 440) for y in (85, 90, 95))
             # Landmark 4: Dark top exit button
             top_ok = any(frame.getpixel((x, 48))[0] < 60 and frame.getpixel((x, 48))[1] < 60 for x in (780, 790, 800))
             return sum([box_ok, green_ok, cyan_ok, top_ok]) >= 2

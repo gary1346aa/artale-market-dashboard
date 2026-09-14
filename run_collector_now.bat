@@ -10,20 +10,24 @@ if "%ITEM_COUNT%"=="" set ITEM_COUNT=105
 
 echo Target Watchlist: %ITEM_COUNT% items
 echo.
-echo Select collection mode:
+echo Select collection mode (Runs in 100% Background Parallel ADB):
+echo   [C] Both (Ask + Trade) [Default - Parallel All Emulators]
+echo   [D] Due Items Only (Fastest - Scans only items due for update)
 echo   [A] Ask Only (Active Listings)
 echo   [B] Trade Only (Matched Trades)
-echo   [C] Both (Ask + Trade) [Default]
 echo   [R] Resume from Item #54 (Both)
-echo   [D] Cancel
+echo   [Q] Quit
 echo.
-set /p mode="Enter choice [A, B, C, R, or D, default=C]: "
+set /p mode="Enter choice [C, D, A, B, R, or Q, default=C]: "
 
-if /i "%mode%"=="D" (
+if /i "%mode%"=="Q" (
     echo [Artale Tracker] Operation cancelled by user.
     exit /b
 )
-if /i "%mode%"=="R" (
+if /i "%mode%"=="D" (
+    echo [Artale Tracker] Starting Due-Only Parallel Collection (Both: Asks + Trades)...
+    powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both -Due
+) else if /i "%mode%"=="R" (
     echo [Artale Tracker] Resuming Full Collection from Item #54 (Both: Asks + Trades)...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both -StartIndex 54
 ) else if /i "%mode%"=="A" (
@@ -33,7 +37,7 @@ if /i "%mode%"=="R" (
     echo [Artale Tracker] Starting Trade Only Collection (Matched Trades)...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab trades
 ) else (
-    echo [Artale Tracker] Starting Full Collection (Both: Asks + Trades)...
+    echo [Artale Tracker] Starting Full Parallel Collection (Both: Asks + Trades)...
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both
 )
 

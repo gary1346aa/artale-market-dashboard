@@ -1,9 +1,10 @@
-﻿param (
+param (
     [string]$Watchlist = "items_watchlist.json",
     [string]$Query = "",
     [int]$Pages = 2,
     [string]$TargetTab = "trades",
-    [string]$Instance = "槍手",
+    [string]$Instance = "",
+    [int]$Parallel = 0,
     [string]$Script = "",
     [int]$StartIndex = 1,
     [int]$Tier = 0,
@@ -72,6 +73,9 @@ if ($Tier -gt 0) {
 }
 if ($Due) {
     $extraArgs += @("--due")
+}
+if ($Parallel -gt 0) {
+    $extraArgs += @("--parallel", $Parallel)
 }
 
 if ($Query -ne "") {

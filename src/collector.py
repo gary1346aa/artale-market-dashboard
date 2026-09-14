@@ -11,6 +11,12 @@ from .aggregator import KlineAggregator
 from .instance_launcher import InstanceLauncher
 from .tier_evaluator import update_item_timestamp, TierEvaluator
 from .async_ocr import AsyncOcrWorker
+from .adb_controller import AdbController
+
+INSTANCE_TO_DEVICE = {
+    "祈禱機": "emulator-5558",
+    "槍手": "emulator-5560",
+}
 
 import sys
 if sys.platform == "win32":
@@ -39,7 +45,8 @@ class MarketCollector:
     POS_NEXT_PAGE = (680, 112)        # Scaled to (850, 140) on 1280x720 - center of [>] button
     POS_FIRST_PAGE = (533, 112)       # Scaled to (666, 140) on 1280x720 - center of [|<] button
 
-    def __init__(self, window_mgr: Optional[WindowManager] = None, instance_name: Optional[str] = None):
+    def __init__(self, window_mgr: Optional[WindowManager] = None, instance_name: Optional[str] = None, use_adb: bool = True):
+        self.use_adb = use_adb
         self.quota_mgr = QuotaManager()
         self.launcher = InstanceLauncher()
         if instance_name:
@@ -50,7 +57,20 @@ class MarketCollector:
         self.win_mgr = window_mgr or WindowManager(title_keywords=[self.current_instance, "LDPlayer", "雷電模擬器", "雷電"])
         self.aggregator = KlineAggregator()
         self.ocr_worker = AsyncOcrWorker()
+
+        if self.use_adb:
+            dev_id = INSTANCE_TO_DEVICE.get(self.current_instance, "emulator-5558")
+            self.adb = AdbController(device_id=dev_id)
+            logger.info(f"Initialized ADB background engine on device '{dev_id}' for '{self.current_instance}'.")
+        else:
+            self.adb = None
+
         init_db()
+
+    def capture_frame(self) -> Optional[Image.Image]:
+        if self.use_adb and self.adb:
+            return self.adb.screencap()
+        return self.win_mgr.capture_frame() if self.win_mgr else None
 
     def switch_to_instance(self, instance_name: str) -> bool:
         """
@@ -58,24 +78,38 @@ class MarketCollector:
         Ensures the target instance is booted and navigated into the Auction House.
         """
         logger.info(f"Switching active tracker to instance '{instance_name}'...")
-        if not self.launcher.ensure_instance_in_auction(instance_name):
-            logger.error(f"Failed to prepare '{instance_name}' in Auction House.")
-            return False
         self.current_instance = instance_name
-        self.win_mgr = WindowManager(title_keywords=[instance_name])
         self.quota_mgr.switch_instance(instance_name)
+
+        if self.use_adb and self.adb:
+            dev_id = INSTANCE_TO_DEVICE.get(instance_name, "emulator-5558")
+            self.adb = AdbController(device_id=dev_id)
+            logger.info(f"Switched ADB device to '{dev_id}' ({instance_name}).")
+        else:
+            self.win_mgr = WindowManager(title_keywords=[instance_name])
+
         self.ensure_focus()
         logger.info(f"Switched successfully to '{instance_name}'.")
         return True
 
     def ensure_focus(self) -> bool:
+        if self.use_adb and self.adb:
+            if self.adb.is_auction_open():
+                return True
+            if self.adb.is_free_market():
+                logger.info(f"Instance '{self.current_instance}' detected in Free Market. Entering Auction House via menu...")
+                if self.adb.enter_auction_from_free_market():
+                    logger.info("Successfully entered Auction House via ADB menu.")
+                    return True
+            logger.info(f"Checking launcher recovery for '{self.current_instance}'...")
+            return self.launcher.ensure_instance_in_auction(self.current_instance)
+
         if not self.win_mgr.find_window():
             logger.info(f"Window for '{self.current_instance}' not detected. Launching into auction...")
             if not self.launcher.ensure_instance_in_auction(self.current_instance):
                 logger.error(f"Could not prepare instance '{self.current_instance}'.")
                 return False
 
-        # Bring window to front BEFORE capturing screen to prevent occlusion by File Explorer / CMD
         self.win_mgr.bring_to_front()
         time.sleep(0.8)
 
@@ -89,33 +123,21 @@ class MarketCollector:
     def is_auction_open(self) -> bool:
         """
         Checks whether the Auction House modal is currently open.
-        Guarantees that the bot NEVER interacts if the auction was closed.
-        Uses robust multi-landmark scoring across invariant UI elements:
-        1. White search box at top
-        2. Bright green '開始搜尋' button in left sidebar
-        3. Active cyan tab indicator ('查詢' or '市價')
-        4. Dark gray exit button '離開' at top right
         """
-        frame = self.win_mgr.capture_frame()
+        if self.use_adb and self.adb:
+            return self.adb.is_auction_open()
+
+        frame = self.capture_frame()
         if not frame or frame.width < 500 or frame.height < 300:
             return False
         try:
-            # Landmark 1: White search box
             box_ok = any(frame.getpixel((x, 48))[0] > 180 and frame.getpixel((x, 48))[1] > 180 for x in (240, 280, 320))
-
-            # Landmark 2: Green '開始搜尋' button (dominant green in sidebar button region)
             green_ok = any(frame.getpixel((x, y))[1] > 110 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[2] + 35 
                            for x in (290, 312, 335) for y in (540, 546, 552))
-
-            # Landmark 3: Active cyan tab ('查詢' x ~ 200 or '市價' x ~ 400 at y ~ 120)
             cyan_ok = any(frame.getpixel((x, 120))[1] > 80 and frame.getpixel((x, 120))[2] > 80 and frame.getpixel((x, 120))[0] < 80
                           for x in (180, 220, 260, 360, 400, 440))
-
-            # Landmark 4: Dark top exit button / top bar border
             top_ok = any(frame.getpixel((x, 48))[0] < 60 and frame.getpixel((x, 48))[1] < 60 for x in (780, 790, 800))
-
-            score = sum([box_ok, green_ok, cyan_ok, top_ok])
-            return score >= 2
+            return sum([box_ok, green_ok, cyan_ok, top_ok]) >= 2
         except Exception as e:
             logger.error(f"Error in is_auction_open: {e}")
             return False
@@ -124,11 +146,16 @@ class MarketCollector:
         if not self.is_auction_open():
             logger.error("SAFETY GUARD: Auction House is closed! Refusing to click.")
             return
-        screen_pt = self.win_mgr.to_screen_coords(ref_x, ref_y)
-        if screen_pt:
-            human_click(screen_pt[0], screen_pt[1])
+        if self.use_adb and self.adb:
+            cx = int(ref_x * 1.25)
+            cy = int(ref_y * 1.25)
+            self.adb.tap(cx, cy)
         else:
-            logger.warning(f"Failed to map ref coordinates ({ref_x}, {ref_y}) to screen space.")
+            screen_pt = self.win_mgr.to_screen_coords(ref_x, ref_y)
+            if screen_pt:
+                human_click(screen_pt[0], screen_pt[1])
+            else:
+                logger.warning(f"Failed to map ref coordinates ({ref_x}, {ref_y}) to screen space.")
 
     def switch_to_tab(self, target_tab: str) -> bool:
         """
@@ -141,18 +168,44 @@ class MarketCollector:
             logger.info("Switching to [市價] (Market Trades) tab...")
             self.click_ref(*self.POS_MARKET_TAB)
             
-        human_delay(1.0, 1.5)
+        if self.use_adb and self.adb:
+            time.sleep(0.6)
+        else:
+            human_delay(1.0, 1.5)
         return True
 
     def execute_search(self, keyword: str, reuse_existing: bool = False) -> bool:
         """
         Inputs keyword into the quick search box and submits via Enter cleanly.
-        If reuse_existing is True, skips Alt+8 and clipboard sync, directly submitting
-        the keyword already present in the search bar.
+        If reuse_existing is True, skips typing and reuses existing search term.
         """
         if not self.is_auction_open():
             logger.error("SAFETY GUARD: Auction House is closed! Refusing to search.")
             return False
+
+        if self.use_adb and self.adb:
+            if reuse_existing:
+                logger.info(f"Reusing search bar keyword via ADB: '{keyword}' (fast submit)")
+                self.adb.tap(*self.adb.POS_QUICK_SEARCH)
+                time.sleep(0.3)
+                self.adb.tap(*self.adb.POS_CONFIRM_INPUT)
+                time.sleep(0.3)
+                self.adb.press_enter()
+                time.sleep(1.0)
+                self.adb.handle_lingering_popups()
+            else:
+                logger.info(f"Searching for item via ADB: '{keyword}'")
+                self.adb.tap(*self.adb.POS_QUICK_SEARCH)
+                time.sleep(0.3)
+                self.adb.input_chinese(keyword)
+                time.sleep(0.2)
+                self.adb.tap(*self.adb.POS_CONFIRM_INPUT)
+                time.sleep(0.3)
+                self.adb.press_enter()
+                time.sleep(1.0)
+                self.adb.handle_lingering_popups()
+            time.sleep(0.5)
+            return True
 
         search_pt = self.win_mgr.to_screen_coords(*self.POS_QUICK_SEARCH)
         confirm_pt = self.win_mgr.to_screen_coords(*self.POS_CONFIRM_INPUT)
@@ -174,12 +227,11 @@ class MarketCollector:
         Captures the screen, parses the current page, and saves records directly to DB.
         Returns extracted records, tab, pagination, and a page signature for duplicate detection.
         """
-        frame = self.win_mgr.capture_frame()
+        frame = self.capture_frame()
         if not frame:
             logger.warning("Frame capture returned empty.")
             return {"tab": "unknown", "count": 0, "signature": None}
 
-        # Save last captured frame for verification
         try:
             os.makedirs("data", exist_ok=True)
             frame.save("data/last_captured_frame.png")
@@ -220,12 +272,11 @@ class MarketCollector:
         self.ocr_worker.reset_signature()
 
         # 1. Capture Page 1 frame
-        frame1 = self.win_mgr.capture_frame()
+        frame1 = self.capture_frame()
         if not frame1:
             logger.warning("Frame capture returned empty on page 1.")
             return
 
-        # Save last captured frame for verification
         try:
             os.makedirs("data", exist_ok=True)
             frame1.save("data/last_captured_frame.png")
@@ -244,7 +295,6 @@ class MarketCollector:
             # Queue Page 1 for background full OCR & DB persistence
             self.ocr_worker.submit(frame1, tab=tab, page_num=1)
 
-            # If only 1 page, wait for worker completion and return immediately
             if target_pages <= 1:
                 logger.info(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
                 self.ocr_worker.wait_all()
@@ -252,27 +302,28 @@ class MarketCollector:
 
             # Rapidly flip and stream pages 2 through target_pages
             for page_idx in range(2, target_pages + 1):
-                next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
-                if not next_pt:
-                    logger.warning("Failed to map next page coordinates.")
-                    break
-
                 logger.info(f"Flipping to page {page_idx}/{target_pages}...")
-                human_click(next_pt[0], next_pt[1])
-                human_delay(0.45, 0.55)
+                if self.use_adb and self.adb:
+                    self.adb.tap(*self.adb.POS_NEXT_PAGE)
+                    time.sleep(0.4)
+                else:
+                    next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
+                    if not next_pt:
+                        logger.warning("Failed to map next page coordinates.")
+                        break
+                    human_click(next_pt[0], next_pt[1])
+                    human_delay(0.45, 0.55)
 
-                frame = self.win_mgr.capture_frame()
+                frame = self.capture_frame()
                 if not frame:
                     logger.warning(f"Frame capture returned empty on page {page_idx}.")
                     break
 
                 self.ocr_worker.submit(frame, tab=tab, page_num=page_idx)
 
-            # Sync barrier: Ensure all queued pages are completely parsed and saved to DB
             self.ocr_worker.wait_all()
 
         else:
-            # Fallback: Pagination indicator unparsed on Page 1 (e.g. empty results or font anomaly)
             logger.info("Pagination unparsed on Page 1. Running safe fallback loop...")
             self._fallback_paginate_and_scrape(max_pages=max_pages, is_market=is_market)
 
@@ -289,18 +340,15 @@ class MarketCollector:
             count = info.get("count", 0)
             sig = info.get("signature")
 
-            # 1. Empty page detection beyond page 1
             if count == 0 and page_idx > 1:
                 logger.info(f"Page {page_idx} is empty. Reached end of listings.")
                 break
 
-            # 2. Duplicate page detection
             if last_page_sig is not None and sig is not None and sig == last_page_sig:
                 logger.info(f"Page {page_idx} records are identical to previous page. Reached final page.")
                 break
             last_page_sig = sig
 
-            # 3. Pagination indicator check (curr_p >= total_p)
             if pagination:
                 curr_p, total_p = pagination
                 logger.info(f"Scraped page {curr_p} of {total_p} ({count} items)")
@@ -316,14 +364,19 @@ class MarketCollector:
             if page_idx >= effective_max:
                 break
 
-            next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
-            if next_pt:
-                logger.info("Clicking next page button...")
-                human_click(next_pt[0], next_pt[1])
+            if self.use_adb and self.adb:
+                logger.info("Clicking next page button via ADB...")
+                self.adb.tap(*self.adb.POS_NEXT_PAGE)
+                time.sleep(0.4)
             else:
-                logger.warning("Failed to map next page coordinates.")
-                break
-            human_delay(0.45, 0.55)
+                next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
+                if next_pt:
+                    logger.info("Clicking next page button...")
+                    human_click(next_pt[0], next_pt[1])
+                    human_delay(0.45, 0.55)
+                else:
+                    logger.warning("Failed to map next page coordinates.")
+                    break
 
     def get_sort_direction(self, frame) -> str:
         """
@@ -341,9 +394,8 @@ class MarketCollector:
     def ensure_price_sort_ascending(self):
         """
         Ensures the table is sorted by lowest unit price first (ascending).
-        If not sorted or descending, clicks '每個價錢' header until the down arrow (ascending) lights up.
         """
-        frame = self.win_mgr.capture_frame()
+        frame = self.capture_frame()
         if not frame:
             return
         direction = self.get_sort_direction(frame)
@@ -351,18 +403,17 @@ class MarketCollector:
         if direction == "ascending":
             return
 
-        # Click header once
         logger.info("Clicking [每個價錢] header to sort by price...")
         self.click_ref(*self.POS_PRICE_HEADER)
-        human_delay(1.0, 1.5)
+        time.sleep(0.8)
 
-        frame = self.win_mgr.capture_frame()
+        frame = self.capture_frame()
         direction = self.get_sort_direction(frame)
         logger.info(f"Sort direction after click 1: '{direction}'")
         if direction != "ascending":
             logger.info("Toggling [每個價錢] header to ensure ASCENDING order (lowest price first)...")
             self.click_ref(*self.POS_PRICE_HEADER)
-            human_delay(1.0, 1.5)
+            time.sleep(0.8)
 
     def run_query_collection(self, keyword: str, max_pages: int = 2, target_tab: str = "both"):
         """

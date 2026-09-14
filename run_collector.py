@@ -95,6 +95,14 @@ Examples:
         help="1-based index in watchlist to start/resume scanning from (default: 1)"
     )
 
+    parser.add_argument(
+        "--no-adb",
+        dest="use_adb",
+        action="store_false",
+        help="Disable direct background ADB pipeline and use legacy PyAutoGUI window-based automation"
+    )
+    parser.set_defaults(use_adb=True)
+
     args = parser.parse_args()
 
     # Determine target window manager
@@ -110,7 +118,7 @@ Examples:
         monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
         monitor.start_listener()
     else:
-        collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance)
+        collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance, use_adb=args.use_adb)
         if args.query:
             collector.run_query_collection(args.query, max_pages=args.pages, target_tab=args.target_tab)
             return

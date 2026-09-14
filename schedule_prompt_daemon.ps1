@@ -1,7 +1,8 @@
 # Artale Market Tracker - Scheduled Prompt Daemon
 param (
     [switch]$TestNow,
-    [switch]$RunNow
+    [switch]$RunNow,
+    [int]$TimeoutSec = 30
 )
 
 $ErrorActionPreference = 'Continue'
@@ -38,7 +39,7 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
-function Show-PromptDialog([string]$promptTimeStr) {
+function Show-PromptDialog([string]$promptTimeStr, [int]$timeout = 30) {
     # Dynamically read current watchlist and due item count
     $watchlistPath = "$workDir\items_watchlist.json"
     $pythonExe = "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe"
@@ -66,70 +67,70 @@ function Show-PromptDialog([string]$promptTimeStr) {
         $dueCount = 18
     }
 
+    $script:isAutoTriggered = $false
+    $timeoutSec = $timeout
+
     try {
         [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Artale Market Tracker - Scheduled Collection"
-        Height="430" Width="540"
+        Height="450" Width="550"
         WindowStartupLocation="CenterScreen"
         Topmost="True" ResizeMode="NoResize"
         Background="#F3F4F6" FontFamily="Segoe UI">
     <Grid Margin="20">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="12"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0">
             <TextBlock Text="Artale Market Tracker - Scheduled Update" FontSize="16" FontWeight="Bold" Foreground="#111827"/>
             <TextBlock Text="Scheduled time ($promptTimeStr) reached. Due for collection: $dueCount items (out of $itemCount total)." FontSize="12" Foreground="#4B5563" Margin="0,2,0,0"/>
-            <TextBlock Text="Please choose an option to proceed (or press A / B / C / D):" FontSize="13" Foreground="#1F2937" Margin="0,6,0,0"/>
+            <TextBlock Text="Please choose an option (or press A / B / C / D):" FontSize="13" Foreground="#1F2937" Margin="0,6,0,0"/>
         </StackPanel>
+
+        <!-- Unattended Auto-Proceed Banner -->
+        <Border Grid.Row="1" Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,8,0,10">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="⏱ " FontSize="14"/>
+                <TextBlock Name="TxtCountdown" Text="Auto-proceeding with Both [C] in 30s if unattended... (Press D to Cancel)" FontWeight="SemiBold" FontSize="12" Foreground="#92400E"/>
+            </StackPanel>
+        </Border>
 
         <StackPanel Grid.Row="2">
             <!-- Button A: Ask -->
-            <Button Name="BtnA" Height="50" Margin="0,0,0,8" Background="#2563EB" Foreground="White" BorderThickness="0" Cursor="Hand">
-                <StackPanel Margin="12,5,12,5">
+            <Button Name="BtnA" Height="48" Margin="0,0,0,8" Background="#2563EB" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,4,12,4">
                     <TextBlock Text="[A]  Ask Only (Active Listings - Due Items)" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Scans active listings for $dueCount due items. Updates Lowest Asks &amp; Spreads." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
 
             <!-- Button B: Trade -->
-            <Button Name="BtnB" Height="50" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
-                <StackPanel Margin="12,5,12,5">
+            <Button Name="BtnB" Height="48" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
+                <StackPanel Margin="12,4,12,4">
                     <TextBlock Text="[B]  Trade Only (Matched Trades - Due Items)" FontWeight="Bold" FontSize="13"/>
                     <TextBlock Text="Scans matched trades for $dueCount due items. Updates K-Line charts." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
 
-            <!-- Button C: Both -->
-            <Button Name="BtnC" Height="50" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
+            <!-- Button C: Both (Auto-Default) -->
+            <Button Name="BtnC" Height="52" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
                 <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[C]  Both (Ask + Trade - Due Items)" FontWeight="Bold" FontSize="13"/>
-                    <TextBlock Text="Scans both tabs for $dueCount due items. Re-evaluates tiers and syncs dashboard." FontSize="11" Opacity="0.9"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="[C]  Both (Ask + Trade - Due Items)" FontWeight="Bold" FontSize="13"/>
+                        <Border Background="#A78BFA" CornerRadius="4" Padding="6,1" Margin="8,0,0,0">
+                            <TextBlock Text="Auto-Default" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Text="Full scan for $dueCount due items. Re-evaluates tiers and syncs dashboard." FontSize="11" Opacity="0.9"/>
                 </StackPanel>
             </Button>
 
-            <!-- Button B: Trade -->
-            <Button Name="BtnB" Height="50" Margin="0,0,0,8" Background="#059669" Foreground="White" BorderThickness="0" Cursor="Hand">
-                <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[B]  Trade Only (Matched Trades)" FontWeight="Bold" FontSize="13"/>
-                    <TextBlock Text="Scans matched trades only. Updates K-Line candlestick charts." FontSize="11" Opacity="0.9"/>
-                </StackPanel>
-            </Button>
-
-            <!-- Button C: Both -->
-            <Button Name="BtnC" Height="50" Margin="0,0,0,8" Background="#7C3AED" Foreground="White" BorderThickness="0" Cursor="Hand">
-                <StackPanel Margin="12,5,12,5">
-                    <TextBlock Text="[C]  Both (Ask + Trade)" FontWeight="Bold" FontSize="13"/>
-                    <TextBlock Text="Full update: scans both tabs. Updates K-Lines, Lowest Asks, and Spreads." FontSize="11" Opacity="0.9"/>
-                </StackPanel>
-            </Button>
-
-            <!-- Button D: Cancel -->
+            <!-- Button D: Cancel / Postpone -->
             <Button Name="BtnD" Height="38" Background="#E5E7EB" Foreground="#1F2937" BorderThickness="1" BorderBrush="#D1D5DB" Cursor="Hand">
                 <TextBlock Text="[D]  Cancel (Ask Again in 30 Mins)   [I am currently using the PC]" FontWeight="SemiBold" FontSize="12"/>
             </Button>
@@ -140,29 +141,51 @@ function Show-PromptDialog([string]$promptTimeStr) {
         $reader = (New-Object System.Xml.XmlNodeReader $xaml)
         $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
-        $script:dialogChoice = "postpone"
+        $script:dialogChoice = "both"
+        $script:countdown = $timeoutSec
 
         $btnA = $window.FindName("BtnA")
         $btnB = $window.FindName("BtnB")
         $btnC = $window.FindName("BtnC")
         $btnD = $window.FindName("BtnD")
+        $txtCountdown = $window.FindName("TxtCountdown")
+
+        # DispatcherTimer for 30s auto-proceed when unattended
+        $timer = New-Object System.Windows.Threading.DispatcherTimer
+        $timer.Interval = [TimeSpan]::FromSeconds(1)
+        $timer.Add_Tick({
+            $script:countdown--
+            if ($null -ne $txtCountdown) {
+                $txtCountdown.Text = "Auto-proceeding with Both [C] in $($script:countdown)s if unattended... (Press D to Cancel)"
+            }
+            if ($script:countdown -le 0) {
+                $timer.Stop()
+                $script:isAutoTriggered = $true
+                $script:dialogChoice = "both"
+                $window.Close()
+            }
+        })
 
         $btnA.Add_Click({
+            $timer.Stop()
             $script:dialogChoice = "asks"
             $window.Close()
         })
 
         $btnB.Add_Click({
+            $timer.Stop()
             $script:dialogChoice = "trades"
             $window.Close()
         })
 
         $btnC.Add_Click({
+            $timer.Stop()
             $script:dialogChoice = "both"
             $window.Close()
         })
 
         $btnD.Add_Click({
+            $timer.Stop()
             $script:dialogChoice = "postpone"
             $window.Close()
         })
@@ -170,54 +193,50 @@ function Show-PromptDialog([string]$promptTimeStr) {
         $window.Add_KeyDown({
             param($sender, $e)
             if ($e.Key -eq [System.Windows.Input.Key]::A) {
+                $timer.Stop()
                 $script:dialogChoice = "asks"
                 $window.Close()
             } elseif ($e.Key -eq [System.Windows.Input.Key]::B) {
+                $timer.Stop()
                 $script:dialogChoice = "trades"
                 $window.Close()
             } elseif ($e.Key -eq [System.Windows.Input.Key]::C) {
+                $timer.Stop()
                 $script:dialogChoice = "both"
                 $window.Close()
             } elseif ($e.Key -eq [System.Windows.Input.Key]::Escape -or $e.Key -eq [System.Windows.Input.Key]::D) {
+                $timer.Stop()
                 $script:dialogChoice = "postpone"
                 $window.Close()
             }
         })
 
+        $window.Add_Loaded({
+            $timer.Start()
+        })
+
+        $window.Add_Closed({
+            $timer.Stop()
+        })
+
         $null = $window.ShowDialog()
         return $script:dialogChoice
     } catch {
-        # Fallback to MessageBox if WPF fails
+        # Fallback to Wscript.Shell Popup with 30s auto-dismiss
+        Write-Log "WPF Dialog failed: $_. Using 30s timed fallback popup..."
         $title = 'Artale Market Tracker - Scheduled Collection'
-        $lines = @(
-            '[Artale Market Tracker - Scheduled Update]',
-            '',
-            "It is now the scheduled collection time ($promptTimeStr).",
-            "Target watchlist: $itemCount items. Please choose an option:",
-            '',
-            '  [Yes]    [C] Both (Ask + Trade)',
-            '           Updates K-Lines, Lowest Asks, and Spreads',
-            '',
-            '  [No]     [B] Trade Only (Matched Trades)',
-            '           Updates K-Line candlestick charts only',
-            '',
-            '  [Cancel] [D] Postpone 30 Minutes',
-            '           (I am currently using the PC, ask again later)'
-        )
-        $text = $lines -join [Environment]::NewLine
-
-        $res = [System.Windows.Forms.MessageBox]::Show(
-            $text,
-            $title,
-            [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
-            [System.Windows.Forms.MessageBoxIcon]::Question,
-            [System.Windows.Forms.MessageBoxDefaultButton]::Button1,
-            [System.Windows.Forms.MessageBoxOptions]::ServiceNotification
-        )
-
-        if ($res -eq [System.Windows.Forms.DialogResult]::Yes) { return 'both' }
-        elseif ($res -eq [System.Windows.Forms.DialogResult]::No) { return 'trades' }
-        else { return 'postpone' }
+        $msg = "Scheduled collection time ($promptTimeStr) reached.`nDue items: $dueCount.`n`nClick OK to start collection (Both tabs), or Cancel to postpone 30 mins.`n`n(Auto-proceeds in 30 seconds if unattended...)"
+        try {
+            $wshell = New-Object -ComObject Wscript.Shell
+            # Popup buttons: 1 = OK/Cancel, Icon: 32 = Question
+            $res = $wshell.Popup($msg, $timeoutSec, $title, 1 + 32)
+            if ($res -eq 2) { return 'postpone' }
+            if ($res -eq -1) { $script:isAutoTriggered = $true }
+            return 'both'
+        } catch {
+            $script:isAutoTriggered = $true
+            return 'both'
+        }
     }
 }
 
@@ -253,10 +272,14 @@ while ($true) {
         $promptTimeStr = $now.ToString('HH:mm')
         Write-Log 'Prompt dialog opened. Waiting for user choice...'
 
-        $choice = Show-PromptDialog $promptTimeStr
+        $choice = Show-PromptDialog $promptTimeStr $TimeoutSec
 
         if ($choice -in @('both', 'trades', 'asks')) {
-            Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 for due items..."
+            if ($script:isAutoTriggered) {
+                Write-Log "No input detected within 30s (user not in front of PC). Automatically proceeding with [$choice] for due items..."
+            } else {
+                Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 for due items..."
+            }
             try {
                 Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab $choice -Due" -Wait
                 Write-Log "Collection ($choice) and GitHub Pages sync completed successfully!"

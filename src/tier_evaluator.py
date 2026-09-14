@@ -22,8 +22,8 @@ DB_PATH = PROJECT_DIR / "data" / "market.db"
 WATCHLIST_PATH = PROJECT_DIR / "items_watchlist.json"
 
 TIER_SPECS = {
-    1: {"name": "Ultra-High", "poll_interval_hours": 2.0, "desc": "極高頻消耗品/礦石 (每 1~2 小時)"},
-    2: {"name": "High", "poll_interval_hours": 6.0, "desc": "高頻衝卷/廣播 (每 4~6 小時)"},
+    1: {"name": "Ultra-High", "poll_interval_hours": 1.0, "desc": "極高頻消耗品/礦石 (每 1 小時)"},
+    2: {"name": "High", "poll_interval_hours": 4.0, "desc": "高頻衝卷/廣播 (每 4 小時)"},
     3: {"name": "Moderate", "poll_interval_hours": 12.0, "desc": "主流飾品/武器卷 (每 12 小時)"},
     4: {"name": "Low / Sparse", "poll_interval_hours": 24.0, "desc": "冷門與長尾卷軸 (每 24 小時+)"},
 }

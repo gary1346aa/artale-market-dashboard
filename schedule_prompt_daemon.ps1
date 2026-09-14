@@ -23,10 +23,10 @@ function Write-Log([string]$msg) {
 }
 
 function Get-NextStandardTarget([datetime]$baseTime) {
-    # Aligns to 2-hour scan schedule: 00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00
+    # Aligns to hourly scan schedule (every hour on the hour: 00:00, 01:00, 02:00, 03:00, ...)
     $startOfDay = $baseTime.Date
     $slots = @()
-    for ($h = 0; $h -lt 48; $h += 2) {
+    for ($h = 0; $h -lt 48; $h += 1) {
         $slot = $startOfDay.AddHours($h)
         if ($slot -gt $baseTime) {
             $slots += $slot
@@ -252,7 +252,7 @@ function Show-Toast([string]$msg) {
 
 Write-Log '=========================================='
 Write-Log 'Artale Market Tracker Daemon Started.'
-Write-Log 'Scheduled Target Times: Every 2 Hours (00:00, 02:00, 04:00, 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00)'
+Write-Log 'Scheduled Target Times: Hourly (Every hour on the hour :00)'
 Write-Log '=========================================='
 
 if ($TestNow) {
@@ -288,7 +288,7 @@ while ($true) {
                 Show-Toast "Collection process encountered an error. Check log: $logFile"
             }
 
-            # Recalculate next standard target (every 2 hours)
+            # Recalculate next standard target (hourly)
             $nextPrompt = Get-NextStandardTarget (Get-Date)
             Write-Log "Schedule reset. Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
             Show-Toast "Market collection ($choice) completed successfully!`nNext scheduled scan at: $($nextPrompt.ToString('HH:mm'))."

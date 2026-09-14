@@ -1,11 +1,14 @@
-﻿param (
+param (
     [string]$Watchlist = "items_watchlist.json",
     [string]$Query = "",
     [int]$Pages = 2,
     [string]$TargetTab = "trades",
     [string]$Instance = "槍手",
     [string]$Script = "",
-    [int]$StartIndex = 1
+    [int]$StartIndex = 1,
+    [int]$Tier = 0,
+    [switch]$Due,
+    [switch]$AutoLoop
 )
 
 $ErrorActionPreference = "Continue"
@@ -53,6 +56,15 @@ if ($Instance -ne "") {
 }
 if ($StartIndex -gt 1) {
     $extraArgs += @("--start-index", $StartIndex)
+}
+if ($Tier -gt 0) {
+    $extraArgs += @("--tier", $Tier)
+}
+if ($Due) {
+    $extraArgs += @("--due")
+}
+if ($AutoLoop) {
+    $extraArgs += @("--auto-loop")
 }
 
 if ($Query -ne "") {

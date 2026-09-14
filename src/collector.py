@@ -9,6 +9,7 @@ from .actions import human_click, human_delay, clear_and_paste
 from .quota_manager import QuotaManager
 from .aggregator import KlineAggregator
 from .instance_launcher import InstanceLauncher
+from .tier_evaluator import update_item_timestamp, TierEvaluator
 
 import sys
 if sys.platform == "win32":
@@ -338,6 +339,12 @@ class MarketCollector:
                 except Exception:
                     pass
 
+        # Update last_updated timestamp for this item in items_watchlist.json
+        try:
+            update_item_timestamp(keyword)
+        except Exception:
+            pass
+
     def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2, target_tab: str = "both", start_index: int = 1):
         """
         Iterates over a list of items and captures market data with multi-instance quota tracking and auto-retry.
@@ -382,4 +389,11 @@ class MarketCollector:
                 human_delay(2.0, 3.0)
 
         logger.info("Catalog collection scan completed.")
+
+        # Autonomous Tier Evaluation Pass
+        try:
+            evaluator = TierEvaluator()
+            evaluator.evaluate_and_update_watchlist()
+        except Exception as e:
+            logger.debug(f"Tier re-evaluation error: {e}")
 

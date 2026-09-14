@@ -228,7 +228,8 @@ if __name__ == "__main__":
     wl_path = Path(__file__).resolve().parent.parent / "items_watchlist.json"
     if wl_path.exists():
         with open(wl_path, "r", encoding="utf-8") as f:
-            items = json.load(f)
+            raw_wl = json.load(f)
+            items = list(raw_wl.keys()) if isinstance(raw_wl, dict) else raw_wl
     else:
         items = []
     

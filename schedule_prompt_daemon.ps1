@@ -1,4 +1,4 @@
-﻿# Artale Market Tracker - Scheduled Prompt Daemon
+# Artale Market Tracker - Scheduled Prompt Daemon
 param (
     [switch]$TestNow,
     [switch]$RunNow
@@ -42,9 +42,13 @@ function Show-PromptDialog([string]$promptTimeStr) {
     if (Test-Path $watchlistPath) {
         try {
             $wl = Get-Content $watchlistPath -Raw -Encoding utf8 | ConvertFrom-Json
-            $itemCount = $wl.Count
+            if ($wl.PSObject.Properties) {
+                $itemCount = @($wl.PSObject.Properties).Count
+            } else {
+                $itemCount = @($wl).Count
+            }
         } catch {
-            $itemCount = 84
+            $itemCount = 105
         }
     }
 

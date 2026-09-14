@@ -63,7 +63,8 @@ def get_canonical_watchlist() -> list:
         if wl_path.exists():
             try:
                 with open(wl_path, "r", encoding="utf-8") as f:
-                    _WATCHLIST_CACHE = json.load(f)
+                    raw_wl = json.load(f)
+                    _WATCHLIST_CACHE = list(raw_wl.keys()) if isinstance(raw_wl, dict) else raw_wl
             except Exception:
                 _WATCHLIST_CACHE = []
         else:

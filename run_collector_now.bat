@@ -5,8 +5,8 @@ echo =======================================================
 echo    Artale Market Tracker - Manual Collection Run
 echo =======================================================
 echo.
-for /f %%a in ('powershell -Command "(Get-Content items_watchlist.json -Raw | ConvertFrom-Json).Count"') do set ITEM_COUNT=%%a
-if "%ITEM_COUNT%"=="" set ITEM_COUNT=84
+for /f %%a in ('powershell -Command "(@((Get-Content items_watchlist.json -Raw | ConvertFrom-Json).PSObject.Properties)).Count"') do set ITEM_COUNT=%%a
+if "%ITEM_COUNT%"=="" set ITEM_COUNT=105
 
 echo Target Watchlist: %ITEM_COUNT% items
 echo.

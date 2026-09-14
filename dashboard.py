@@ -47,7 +47,8 @@ def export_dashboard_data() -> Dict:
 
         if WATCHLIST_FILE.exists():
             with open(WATCHLIST_FILE, "r", encoding="utf-8") as f:
-                items = sorted(json.load(f))
+                raw_wl = json.load(f)
+                items = sorted(list(raw_wl.keys()) if isinstance(raw_wl, dict) else raw_wl)
         else:
             cursor.execute("SELECT DISTINCT item_name FROM kline_candles")
             items = sorted([r[0] for r in cursor.fetchall()])

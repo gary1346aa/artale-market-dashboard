@@ -13,6 +13,9 @@ if sys.platform == "win32":
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
+import logging
+logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="%(asctime)s [%(levelname)s] %(message)s", force=True)
+
 from src.collector import MarketCollector
 from src.passive_monitor import PassiveMarketMonitor
 from src.window_manager import WindowManager

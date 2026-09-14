@@ -1,4 +1,4 @@
-param (
+﻿param (
     [string]$Watchlist = "items_watchlist.json",
     [string]$Query = "",
     [int]$Pages = 2,
@@ -64,9 +64,9 @@ if ($Due) {
 }
 
 if ($Query -ne "") {
-    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs | Tee-Object -FilePath $logFile -Append
 } else {
-    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs | Tee-Object -FilePath $logFile -Append
 }
 
 $aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."

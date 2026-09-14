@@ -1,4 +1,4 @@
-# Artale Market Tracker - Scheduled Prompt Daemon
+﻿# Artale Market Tracker - Scheduled Prompt Daemon
 param (
     [switch]$TestNow,
     [switch]$RunNow,
@@ -95,7 +95,7 @@ function Show-PromptDialog([string]$promptTimeStr, [int]$timeout = 30) {
         <!-- Unattended Auto-Proceed Banner -->
         <Border Grid.Row="1" Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,8,0,10">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="⏱ " FontSize="14"/>
+                <TextBlock Text="&#x23F1; " FontSize="14"/>
                 <TextBlock Name="TxtCountdown" Text="Auto-proceeding with Both [C] in 30s if unattended... (Press D to Cancel)" FontWeight="SemiBold" FontSize="12" Foreground="#92400E"/>
             </StackPanel>
         </Border>

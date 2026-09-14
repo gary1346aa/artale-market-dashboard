@@ -17,6 +17,7 @@ import logging
 logging.basicConfig(level=logging.INFO, stream=sys.stdout, format="%(asctime)s [%(levelname)s] %(message)s", force=True)
 
 from src.collector import MarketCollector
+from src.parallel_collector import ParallelCollector
 from src.passive_monitor import PassiveMarketMonitor
 from src.window_manager import WindowManager
 from src.window_selector import WindowSelector
@@ -96,6 +97,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--parallel",
+        type=int,
+        default=None,
+        help="Number of concurrent emulator workers to run in parallel (default: auto-detects all attached emulators, scales to 2, 3, 4, etc.)"
+    )
+    parser.add_argument(
         "--no-adb",
         dest="use_adb",
         action="store_false",
@@ -118,8 +125,9 @@ Examples:
         monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
         monitor.start_listener()
     else:
-        collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance, use_adb=args.use_adb)
+        # Single query mode always uses a single collector
         if args.query:
+            collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance, use_adb=args.use_adb)
             collector.run_query_collection(args.query, max_pages=args.pages, target_tab=args.target_tab)
             return
 
@@ -130,14 +138,22 @@ Examples:
 
         from src.tier_evaluator import get_due_items
 
-        # 1. Due-Only Collection Mode (Scans only items whose time elapsed exceeds their tier interval)
+        # Helper to pick between ParallelCollector and MarketCollector
+        def get_scanner():
+            # If ADB is enabled, no specific instance is pinned, and parallel != 1: use ParallelCollector
+            if args.use_adb and args.instance is None and (args.parallel is None or args.parallel > 1):
+                return ParallelCollector(max_workers=args.parallel, use_adb=True)
+            return MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance, use_adb=args.use_adb)
+
+        # 1. Due-Only Collection Mode
         if args.due:
             due_items, wait_sec, next_item = get_due_items(watchlist_path)
             if not due_items:
                 print(f"All items are up to date! Next item '{next_item}' will be due in {wait_sec/60:.1f} minutes.")
                 return
             print(f"AUTO Mode: Found {len(due_items)} due items. Starting collection...")
-            collector.run_catalog_scan(due_items, max_pages_per_query=args.pages, target_tab=args.target_tab, start_index=args.start_index)
+            scanner = get_scanner()
+            scanner.run_catalog_scan(due_items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
             _, next_wait, next_item = get_due_items(watchlist_path)
             if next_item:
                 print(f"Round completed. Next item '{next_item}' due in {next_wait/60:.1f} minutes.")
@@ -159,7 +175,8 @@ Examples:
         else:
             items = raw_wl
 
-        collector.run_catalog_scan(items, max_pages_per_query=args.pages, target_tab=args.target_tab, start_index=args.start_index)
+        scanner = get_scanner()
+        scanner.run_catalog_scan(items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,21 @@ class AdbController:
     POS_MENU_BUTTON = (1150, 105)
     POS_AUCTION_BUTTON = (1240, 620)
 
+    @classmethod
+    def list_attached_devices(cls, adb_path: str = DEFAULT_ADB) -> List[str]:
+        """Returns list of all attached and responsive ADB devices."""
+        try:
+            p = subprocess.run([adb_path, "devices"], capture_output=True, text=True, timeout=5)
+            devs = []
+            for line in p.stdout.splitlines()[1:]:
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[1] == "device":
+                    devs.append(parts[0])
+            return devs
+        except Exception as e:
+            logger.error(f"Error listing attached ADB devices: {e}")
+            return []
+
     def __init__(self, device_id: str = "emulator-5558", adb_path: str = DEFAULT_ADB):
         self.device_id = device_id
         self.adb_path = adb_path

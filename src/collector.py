@@ -45,8 +45,9 @@ class MarketCollector:
     POS_NEXT_PAGE = (680, 112)        # Scaled to (850, 140) on 1280x720 - center of [>] button
     POS_FIRST_PAGE = (533, 112)       # Scaled to (666, 140) on 1280x720 - center of [|<] button
 
-    def __init__(self, window_mgr: Optional[WindowManager] = None, instance_name: Optional[str] = None, use_adb: bool = True):
+    def __init__(self, window_mgr: Optional[WindowManager] = None, instance_name: Optional[str] = None, use_adb: bool = True, allow_instance_rotation: bool = True):
         self.use_adb = use_adb
+        self.allow_instance_rotation = allow_instance_rotation
         self.quota_mgr = QuotaManager()
         self.launcher = InstanceLauncher()
         if instance_name:
@@ -420,15 +421,19 @@ class MarketCollector:
         Performs search for a keyword, ensures price sort is ascending, and collects requested tabs.
         target_tab: 'asks' (only 查詢), 'trades' (only 市價), or 'both'
         """
-        # Check & auto-rotate instance if current instance quota is exhausted
-        active_inst = self.quota_mgr.get_available_instance(required=1)
-        if not active_inst:
-            logger.warning("DAILY QUOTA EXHAUSTED across all instances. Pausing until 08:00 AM reset.")
-            return
-
-        if active_inst != self.current_instance:
-            if not self.switch_to_instance(active_inst):
-                logger.error(f"Failed to switch to instance '{active_inst}'.")
+        # Check & auto-rotate instance if allowed and needed
+        if self.allow_instance_rotation:
+            active_inst = self.quota_mgr.get_available_instance(required=1)
+            if not active_inst:
+                logger.warning("DAILY QUOTA EXHAUSTED across all instances. Pausing until 08:00 AM reset.")
+                return
+            if active_inst != self.current_instance:
+                if not self.switch_to_instance(active_inst):
+                    logger.error(f"Failed to switch to instance '{active_inst}'.")
+                    return
+        else:
+            if not self.quota_mgr.can_search(self.current_instance, required=1):
+                logger.warning(f"[{self.current_instance}] Quota exhausted. Pausing this worker.")
                 return
 
         if not self.ensure_focus():
@@ -442,10 +447,13 @@ class MarketCollector:
         # 1. Scrape Active Listings (查詢) if requested
         if target_tab in ("asks", "both"):
             if not self.quota_mgr.can_search(self.current_instance, required=1):
-                logger.warning(f"Quota for '{self.current_instance}' exhausted. Checking other instances...")
-                alt_inst = self.quota_mgr.get_available_instance(required=1)
-                if alt_inst and alt_inst != self.current_instance:
-                    self.switch_to_instance(alt_inst)
+                if self.allow_instance_rotation:
+                    logger.warning(f"Quota for '{self.current_instance}' exhausted. Checking other instances...")
+                    alt_inst = self.quota_mgr.get_available_instance(required=1)
+                    if alt_inst and alt_inst != self.current_instance:
+                        self.switch_to_instance(alt_inst)
+                    else:
+                        return
                 else:
                     return
             self.switch_to_tab("query")
@@ -458,11 +466,14 @@ class MarketCollector:
         # 2. Scrape Matched Trades (市價) if requested
         if target_tab in ("trades", "both"):
             if not self.quota_mgr.can_search(self.current_instance, required=1):
-                logger.warning(f"Quota for '{self.current_instance}' exhausted. Checking other instances...")
-                alt_inst = self.quota_mgr.get_available_instance(required=1)
-                if alt_inst and alt_inst != self.current_instance:
-                    self.switch_to_instance(alt_inst)
-                    query_success = False
+                if self.allow_instance_rotation:
+                    logger.warning(f"Quota for '{self.current_instance}' exhausted. Checking other instances...")
+                    alt_inst = self.quota_mgr.get_available_instance(required=1)
+                    if alt_inst and alt_inst != self.current_instance:
+                        self.switch_to_instance(alt_inst)
+                        query_success = False
+                    else:
+                        return
                 else:
                     return
             self.switch_to_tab("market")
@@ -485,10 +496,11 @@ class MarketCollector:
         except Exception:
             pass
 
-    def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2, target_tab: str = "both", start_index: int = 1):
+    def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2, target_tab: str = "both", start_index: int = 1, max_pages: Optional[int] = None):
         """
         Iterates over a list of items and captures market data with multi-instance quota tracking and auto-retry.
         """
+        pages = max_pages if max_pages is not None else max_pages_per_query
         logger.info(f"Starting catalog collection scan for {len(keywords)} items (Target Mode: '{target_tab}', Start Index: {start_index})...")
         if not self.ensure_focus():
             logger.error(f"Cannot initialize or focus instance '{self.current_instance}'. Halting scan.")
@@ -512,7 +524,7 @@ class MarketCollector:
                     break
             logger.info(f"--- Processing [{idx}/{len(keywords)}]: '{item}' [Using: {self.current_instance}] ---")
             try:
-                self.run_query_collection(item, max_pages=max_pages_per_query, target_tab=target_tab)
+                self.run_query_collection(item, max_pages=pages, target_tab=target_tab)
             except Exception as e:
                 logger.error(f"Error processing item '{item}': {e}")
                 failed_items.append(item)
@@ -523,7 +535,7 @@ class MarketCollector:
             logger.info(f"=== Autonomous Retry Pass: Re-attempting {len(failed_items)} failed items ===")
             for f_item in failed_items:
                 try:
-                    self.run_query_collection(f_item, max_pages=max_pages_per_query, target_tab=target_tab)
+                    self.run_query_collection(f_item, max_pages=pages, target_tab=target_tab)
                 except Exception as e:
                     logger.error(f"Retry failed for '{f_item}': {e}")
                 human_delay(2.0, 3.0)

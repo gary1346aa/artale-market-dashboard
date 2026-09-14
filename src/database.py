@@ -6,9 +6,15 @@ from .models import ActiveListing, MatchedTrade
 DB_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DB_DIR / "market.db"
 
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
 def init_db():
     DB_DIR.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection() as conn:
         cursor = conn.cursor()
         
         # Table 1: Active sell listings (查詢)
@@ -67,7 +73,7 @@ def init_db():
         conn.commit()
 
 def save_active_listings(listings: List[ActiveListing]):
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection() as conn:
         cursor = conn.cursor()
         cursor.executemany("""
             INSERT INTO active_listings (item_name, quantity, total_price, unit_price, remaining_time, seller_id, page_number, captured_at)
@@ -87,7 +93,7 @@ def save_active_listings(listings: List[ActiveListing]):
         conn.commit()
 
 def save_matched_trades(trades: List[MatchedTrade]):
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection() as conn:
         cursor = conn.cursor()
         for t in trades:
             # Deterministic hash to deduplicate overlapping pages
@@ -107,7 +113,7 @@ def save_matched_trades(trades: List[MatchedTrade]):
         conn.commit()
 
 def save_kline_candles(candles: List[dict]):
-    with sqlite3.connect(DB_PATH) as conn:
+    with get_connection() as conn:
         cursor = conn.cursor()
         cursor.executemany("""
             INSERT INTO kline_candles (

@@ -1310,7 +1310,7 @@ def generate_dashboard_html():
                 <span>Last Updated: <strong class="sync-time">__LAST_SYNCED__</strong></span>
             </div>
             <div class="footer-credit">
-                <span>© 2026 By <strong>5AM G8G</strong></span>
+                <span>© 2026 By <strong>G8G</strong></span>
             </div>
         </footer>
         </div>
@@ -1380,7 +1380,7 @@ def generate_dashboard_html():
                     <span>Last Updated: <strong class="sync-time">__LAST_SYNCED__</strong></span>
                 </div>
                 <div class="footer-credit">
-                    <span>© 2026 By <strong>5AM G8G</strong></span>
+                    <span>© 2026 By <strong>G8G</strong></span>
                 </div>
             </footer>
         </div>

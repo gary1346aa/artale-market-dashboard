@@ -1,7 +1,7 @@
 # Artale Market Analysis & Trading Intelligence System
 
 [![GitHub Pages](https://img.shields.io/badge/Live%20Dashboard-GitHub%20Pages-success?style=for-the-badge&logo=github)](https://gary1346aa.github.io/artale-market-dashboard/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20LDPlayer%209%20%7C%20ADB-blue?style=for-the-badge)](https://www.ldplayer.net/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20ADB-blue?style=for-the-badge)](#)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-informational?style=for-the-badge&logo=python)](https://www.python.org/)
 [![Database](https://img.shields.io/badge/Storage-SQLite%20(WAL%20Mode)-orange?style=for-the-badge&logo=sqlite)](https://www.sqlite.org/)
 
@@ -12,17 +12,17 @@ An automated, high-speed market intelligence, OCR extraction, candlestick aggreg
 ## 🌟 Key Features & Architecture
 
 ### 1. 100% Silent Background ADB Automation
-- **Zero Mouse Hijacking**: All input (`tap`, `keyevent`) is injected directly into LDPlayer canvas instances via Android Debug Bridge (`adb.exe`).
+- **Zero Mouse Hijacking**: All input (`tap`, `keyevent`) is injected directly via Android Debug Bridge (`adb.exe`).
 - **Zero Window Focus Stealing**: Runs completely in the background without minimizing your current work, moving your cursor, or interrupting PC usage.
 - **Native Unicode Chinese Input**: Injects complex Traditional Chinese search keywords directly via `ADBKeyBoard.apk` (`am broadcast -a ADB_INPUT_B64`), bypassing host clipboard latency and phantom glyph issues.
 - **Robust Modal & Dim Validation**: Intelligent screen-dimming detection distinguishes active modals from table content, preventing spurious keystrokes and avoiding unwanted lobby exit prompts.
 
 ### 2. Scalable Multi-Instance Parallel Collector
-- **Dynamic Work-Stealing Queue**: Auto-detects all attached emulators (`emulator-5558`, `emulator-5560`, ..., `emulator-5558+2N`) and scales collection across $N \ge 2$ instances concurrently.
+- **Dynamic Work-Stealing Queue**: Auto-detects all attached ADB devices and scales collection across $N \ge 2$ instances concurrently.
 - **High-Speed Execution**: 
   - **~1.1s per page** end-to-end (SurfaceFlinger screencap + ROI crop + OCR + database write + page flip).
   - **~24.5s per item** across 22 full auction pages (2 active listing pages + 20 transaction history pages).
-- **Quota Isolation**: Independent daily query quota management per emulator instance (500 queries/instance).
+- **Quota Isolation**: Independent daily query quota management per ADB instance (500 queries/instance).
 
 ### 3. Concurrency-Safe Financial Storage
 - **SQLite Write-Ahead Logging (WAL)**: `PRAGMA journal_mode=WAL; synchronous=NORMAL; timeout=30.0` enables seamless multi-threaded concurrent writes from all parallel workers without locking.
@@ -49,7 +49,7 @@ An automated, high-speed market intelligence, OCR extraction, candlestick aggreg
 | Launcher Script | Description |
 | :--- | :--- |
 | **[`start_scheduled_tracker.bat`](start_scheduled_tracker.bat)** | **Starts the Hourly Background Daemon**. Runs silently in background, prompting every hour on the hour. |
-| **[`run_auto.bat`](run_auto.bat)** | **One-Click Due Item Scan**. Immediately scans all currently due items across attached emulators in parallel ADB mode. |
+| **[`run_auto.bat`](run_auto.bat)** | **One-Click Due Item Scan**. Immediately scans all currently due items across attached ADB devices in parallel mode. |
 | **[`run_collector_now.bat`](run_collector_now.bat)** | **Interactive Launcher Menu**. Select Due-Only, Full Catalog, Specific Tier (1-4), or Single Item Query. |
 | **[`test_scheduled_prompt.bat`](test_scheduled_prompt.bat)** | **Test Scheduler Dialog**. Instantly opens the prompt dialog to test countdown and options. |
 | **[`stop_scheduled_tracker.bat`](stop_scheduled_tracker.bat)** | **Stops the Background Daemon**. Safely terminates any running scheduler processes. |
@@ -61,7 +61,7 @@ An automated, high-speed market intelligence, OCR extraction, candlestick aggreg
 Direct command-line execution for advanced operations:
 
 ```bash
-# 1. Parallel collection for all currently due items (Default: all attached emulators)
+# 1. Parallel collection for all currently due items (Default: all attached ADB devices)
 python run_collector.py --due --target-tab both
 
 # 2. Collect a specific watchlist tier (e.g., Tier 1 Ultra-High)
@@ -91,7 +91,7 @@ artale_market_tracker/
 ├── data/
 │   ├── backups/               # Automated timestamped SQLite backups
 │   ├── market.db              # SQLite WAL database (trades, listings, candles)
-│   └── quota_tracker.json     # Daily emulator search quota state
+│   └── quota_tracker.json     # Daily ADB device search quota state
 ├── docs/
 │   └── index.html             # Public GitHub Pages production dashboard
 ├── src/

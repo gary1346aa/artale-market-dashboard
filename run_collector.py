@@ -149,14 +149,14 @@ Examples:
         if args.due:
             due_items, wait_sec, next_item = get_due_items(watchlist_path)
             if not due_items:
-                print(f"All items are up to date! Next item '{next_item}' will be due in {wait_sec/60:.1f} minutes.")
+                print("All items are up to date! (0 items due)")
                 return
-            print(f"AUTO Mode: Found {len(due_items)} due items. Starting collection...")
+            with open(watchlist_path, "r", encoding="utf-8") as f:
+                total_count = len(json.load(f))
+            print(f"AUTO Mode: Found {len(due_items)} of {total_count} items due to update. Starting collection...")
             scanner = get_scanner()
             scanner.run_catalog_scan(due_items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
-            _, next_wait, next_item = get_due_items(watchlist_path)
-            if next_item:
-                print(f"Round completed. Next item '{next_item}' due in {next_wait/60:.1f} minutes.")
+            print("Round completed.")
             return
 
         # 2. Standard / Tier-Filtered Catalog Scan

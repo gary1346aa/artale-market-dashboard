@@ -283,8 +283,7 @@ while ($true) {
             $dueList = @($dueInfo.due_items)
 
             if ($dueCount -eq 0) {
-                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date!"
-                Write-Log "Next item '$nextItem' will be due in $waitMin minutes. Skipping collection."
+                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date. Skipping collection."
             } else {
                 $sample = if ($dueList.Count -gt 6) { ($dueList[0..5] -join ', ') + " (+$(($dueList.Count - 6)) more)" } else { $dueList -join ', ' }
                 Write-Log "Watchlist Check: $dueCount of $totalCount item(s) due to update: [$sample]"

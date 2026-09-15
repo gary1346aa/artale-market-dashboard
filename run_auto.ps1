@@ -73,9 +73,7 @@ if ($Due) {
 
         Write-Host "=======================================================" -ForegroundColor Yellow
         if ($dueCount -eq 0) {
-            Write-Host "  Watchlist Status: 0 of $totalCount items due for update." -ForegroundColor Green
-            Write-Host "  All items are currently up to date!" -ForegroundColor Green
-            Write-Host "  Next item '$nextItem' will be due in $waitMin minutes." -ForegroundColor Gray
+            Write-Host "  Watchlist Status: 0 of $totalCount items due for update. All up to date!" -ForegroundColor Green
         } else {
             Write-Host "  Watchlist Status: $dueCount of $totalCount item(s) due for update." -ForegroundColor Yellow
             $sample = if ($dueItems.Count -gt 6) { ($dueItems[0..5] -join ', ') + " (+$(($dueItems.Count - 6)) more)" } else { $dueItems -join ', ' }

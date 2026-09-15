@@ -252,54 +252,34 @@ function Show-Toast([string]$msg) {
 
 Write-Log '=========================================='
 Write-Log 'Artale Market Tracker Daemon Started.'
-Write-Log 'Scheduled Target Times: Hourly (Every hour on the hour :00)'
+Write-Log 'Schedule: Hourly (Every hour on the hour :00)'
+Write-Log 'Mode: 100% Silent Background (Both + Due, No Prompts)'
 Write-Log '=========================================='
 
-if ($TestNow) {
-    $nextPrompt = Get-Date
-    Write-Log '[TEST MODE] Triggering test prompt dialog immediately...'
-} elseif ($RunNow) {
+if ($TestNow -or $RunNow) {
     $nextPrompt = (Get-Date).AddSeconds(-1)
+    Write-Log '[TEST/RUN NOW] Triggering immediate background collection...'
 } else {
     $nextPrompt = Get-NextStandardTarget (Get-Date)
-    Write-Log "Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
+    Write-Log "Next scheduled run: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
 }
 
 while ($true) {
     $now = Get-Date
 
     if ($now -ge $nextPrompt) {
-        $promptTimeStr = $now.ToString('HH:mm')
-        Write-Log 'Prompt dialog opened. Waiting for user choice...'
+        Write-Log "Scheduled hourly target reached ($($now.ToString('HH:mm'))). Starting silent background collection (Both tabs, due items)..."
 
-        $choice = Show-PromptDialog $promptTimeStr $TimeoutSec
-
-        if ($choice -in @('both', 'trades', 'asks')) {
-            if ($script:isAutoTriggered) {
-                Write-Log "No input detected within 30s (user not in front of PC). Automatically proceeding with [$choice] for due items..."
-            } else {
-                Write-Log "User selected mode: [$choice]. Launching run_auto.ps1 for due items..."
-            }
-            try {
-                Start-Process powershell.exe -ArgumentList "-ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab $choice -Due" -Wait
-                Write-Log "Collection ($choice) and GitHub Pages sync completed successfully!"
-            } catch {
-                Write-Log "Error executing run_auto.ps1: $_"
-                Show-Toast "Collection process encountered an error. Check log: $logFile"
-            }
-
-            # Recalculate next standard target (hourly)
-            $nextPrompt = Get-NextStandardTarget (Get-Date)
-            Write-Log "Schedule reset. Next scheduled prompt: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
-            Show-Toast "Market collection ($choice) completed successfully!`nNext scheduled scan at: $($nextPrompt.ToString('HH:mm'))."
-
-        } else {
-            # User clicked [Cancel] or closed dialog
-            $nextPrompt = (Get-Date).AddMinutes(30)
-            $nextStr = $nextPrompt.ToString('HH:mm')
-            Write-Log "User chose to postpone. Next prompt at: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
-            Show-Toast "Collection postponed.`nYou will be prompted again in 30 minutes (at $nextStr)."
+        try {
+            Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait
+            Write-Log "Silent collection (Both + Due) and sync completed successfully!"
+        } catch {
+            Write-Log "Error executing run_auto.ps1: $_"
         }
+
+        # Recalculate next standard target (hourly)
+        $nextPrompt = Get-NextStandardTarget (Get-Date)
+        Write-Log "Schedule reset. Next scheduled run at: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
     }
 
     Start-Sleep -Seconds 15

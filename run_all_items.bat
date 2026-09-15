@@ -1,15 +1,15 @@
 @echo off
-title Artale Market Collector - Live Monitor
+title Artale Market Collector - Full Watchlist Scan (Both Mode)
 cd /d "%~dp0"
 echo =======================================================
-echo    Artale Market Tracker - Due Collection Run
-echo    Mode: Both (Asks + Trades) ^| Target: Due Items Only
+echo    Artale Market Tracker - Full Watchlist Scan
+echo    Mode: Both (Asks + Trades) ^| Target: All Tracked Items
 echo    Engine: 100%% Background Parallel ADB (No PC interruption)
 echo =======================================================
 echo.
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both -Due
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both
 echo.
 echo =======================================================
-echo    Collection run completed. Press any key to exit.
+echo    Full collection completed. Press any key to exit.
 echo =======================================================
 pause

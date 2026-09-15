@@ -48,10 +48,10 @@ An automated, high-speed market intelligence, OCR extraction, candlestick aggreg
 
 | Launcher Script | Description |
 | :--- | :--- |
-| **[`start_scheduled_tracker.bat`](start_scheduled_tracker.bat)** | **Starts the Hourly Background Daemon**. Runs silently in background, prompting every hour on the hour. |
-| **[`run_auto.bat`](run_auto.bat)** | **One-Click Due Item Scan**. Immediately scans all currently due items across attached ADB devices in parallel mode. |
-| **[`run_collector_now.bat`](run_collector_now.bat)** | **Interactive Launcher Menu**. Select Due-Only, Full Catalog, Specific Tier (1-4), or Single Item Query. |
-| **[`test_scheduled_prompt.bat`](test_scheduled_prompt.bat)** | **Test Scheduler Dialog**. Instantly opens the prompt dialog to test countdown and options. |
+| **[`start_scheduled_tracker.bat`](start_scheduled_tracker.bat)** | **Starts the Hourly Background Daemon**. Runs 100% silently in the background, executing `both + due` every hour on the hour with zero interruption to PC use. |
+| **[`run_collector_now.bat`](run_collector_now.bat)** | **One-Click Due Items Scan**. Immediately scans all currently due items (Both: Asks + Trades) in parallel ADB mode with zero prompts. |
+| **[`run_all_items.bat`](run_all_items.bat)** | **One-Click Full Catalog Scan**. Scans the entire watchlist of all items (Both: Asks + Trades) in parallel ADB mode with zero prompts. |
+| **[`run_auto.bat`](run_auto.bat)** | **Automated Pipeline Runner**. Runs collection (`both + due`), aggregates K-lines, builds dashboard, and syncs to GitHub Pages. |
 | **[`stop_scheduled_tracker.bat`](stop_scheduled_tracker.bat)** | **Stops the Background Daemon**. Safely terminates any running scheduler processes. |
 
 ---
@@ -111,7 +111,8 @@ artale_market_tracker/
 ├── start_scheduled_tracker.bat
 ├── stop_scheduled_tracker.bat
 ├── run_auto.bat
-└── run_collector_now.bat
+├── run_collector_now.bat
+└── run_all_items.bat
 ```
 
 ---

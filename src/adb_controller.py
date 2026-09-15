@@ -92,19 +92,19 @@ class AdbController:
     def is_lobby_dialog_open(self, frame: Optional[Image.Image] = None) -> bool:
         """
         Checks if '前往大廳 是否結束遊玩並前往大廳？' exit dialog is open.
-        When open, the entire screen has a ~60% dark translucent overlay,
-        dimming the normally pure-white search box (280, 48) to ~102 gray.
+        Accurately detected by the prominent orange confirmation button around (741, 490)
+        and gray [ 否 ] button around (481, 490).
         """
         if frame is None:
             frame = self.screencap()
         if not frame:
             return False
         try:
-            p_box = frame.getpixel((280, 48))[:3]
-            is_dimmed_box = (70 < p_box[0] < 140 and 70 < p_box[1] < 140 and 70 < p_box[2] < 140)
-            p_center = frame.getpixel((640, 180))[:3]
-            is_dimmed_center = (p_center[0] < 35 and p_center[1] < 35 and p_center[2] < 35)
-            return is_dimmed_box and is_dimmed_center
+            p_yes = frame.getpixel((741, 490))[:3]
+            is_orange = (p_yes[0] > 220 and 140 < p_yes[1] < 210 and p_yes[2] < 80)
+            p_no = frame.getpixel((481, 490))[:3]
+            is_gray = (p_no[0] > 180 and p_no[1] > 180 and p_no[2] > 180) or (abs(p_no[0] - p_no[1]) < 10 and abs(p_no[1] - p_no[2]) < 10 and 40 < p_no[0] < 160)
+            return is_orange and is_gray
         except Exception:
             return False
 
@@ -128,8 +128,9 @@ class AdbController:
 
     def handle_lingering_popups(self, frame: Optional[Image.Image] = None) -> bool:
         """
-        Actively checks for and cancels '前往大廳' (via ESC) or dismisses '沒有查詢的道具' modal (via tap).
-        Returns True if a popup was dismissed.
+        Actively checks for and dismisses '前往大廳' (via tapping [ 否 ]) or '沒有查詢的道具' modal (via tap).
+        NOTE: Never send ESC (keyevent 111) in Artale/MapleStory Worlds, because ESC is the in-game
+        hotkey that actually summons the '前往大廳' prompt!
         """
         if frame is None:
             frame = self.screencap()
@@ -137,8 +138,8 @@ class AdbController:
             return False
 
         if self.is_lobby_dialog_open(frame):
-            logger.info(f"Canceling '前往大廳' prompt on {self.device_id} via ESC...")
-            self.press_esc()
+            logger.info(f"Dismissing '前往大廳' prompt on {self.device_id} by tapping [ 否 ]...")
+            self.tap(481, 490)
             time.sleep(0.4)
             return True
 

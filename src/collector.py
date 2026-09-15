@@ -120,8 +120,8 @@ class MarketCollector:
                 if self.adb.enter_auction_from_free_market():
                     logger.info("Successfully entered Auction House via ADB menu.")
                     return True
-            logger.info(f"Checking launcher recovery for '{self.current_instance}'...")
-            return self.launcher.ensure_instance_in_auction(self.current_instance)
+            logger.warning(f"Instance '{self.current_instance}' ({self.adb.device_id}) is not currently in the Auction House.")
+            return False
 
         if not self.win_mgr.find_window():
             logger.info(f"Window for '{self.current_instance}' not detected. Launching into auction...")

@@ -13,10 +13,28 @@ from .tier_evaluator import update_item_timestamp, TierEvaluator
 from .async_ocr import AsyncOcrWorker
 from .adb_controller import AdbController
 
-INSTANCE_TO_DEVICE = {
-    "祈禱機": "emulator-5558",
-    "槍手": "emulator-5560",
-}
+def _discover_instances() -> Dict[str, str]:
+    mapping = {
+        "祈禱機": "emulator-5558",
+        "槍手": "emulator-5560",
+        "打火機": "emulator-5562",
+        "弩手": "emulator-5568",
+    }
+    try:
+        import subprocess
+        p = subprocess.run([r"C:\LDPlayer\LDPlayer9\ldconsole.exe", "list2"], capture_output=True, timeout=2)
+        if p.returncode == 0:
+            for line in p.stdout.decode('utf-8', errors='ignore').splitlines():
+                parts = line.strip().split(',')
+                if len(parts) >= 2:
+                    idx, name = parts[0], parts[1]
+                    port = 5554 + int(idx) * 2
+                    mapping[name] = f"emulator-{port}"
+    except Exception:
+        pass
+    return mapping
+
+INSTANCE_TO_DEVICE = _discover_instances()
 
 import sys
 if sys.platform == "win32":

@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 QUOTA_FILE = Path(__file__).resolve().parent.parent / "data" / "quota_tracker.json"
 DAILY_LIMIT = 500
 RESET_HOUR = 8  # 08:00 AM
-DEFAULT_INSTANCES = ["祈禱機", "槍手"]
+DEFAULT_INSTANCES = ["祈禱機", "槍手", "打火機", "弩手"]
 
 class QuotaManager:
     """

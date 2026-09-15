@@ -61,6 +61,31 @@ $startMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Starting collection
 Write-Host $startMsg -ForegroundColor Cyan
 $startMsg | Out-File $logFile -Append -Encoding utf8
 
+if ($Due) {
+    try {
+        $pyCmd = "import json; from src.tier_evaluator import get_due_items; due, wait_sec, next_item = get_due_items(); wl = json.load(open('$Watchlist', 'r', encoding='utf-8')); print(json.dumps({'due_count': len(due), 'total_count': len(wl), 'wait_min': round(wait_sec/60, 1), 'next_item': next_item, 'due_items': due}, ensure_ascii=False))"
+        $dueInfo = & $python -c $pyCmd | ConvertFrom-Json
+        $dueCount = $dueInfo.due_count
+        $totalCount = $dueInfo.total_count
+        $waitMin = $dueInfo.wait_min
+        $nextItem = $dueInfo.next_item
+        $dueItems = @($dueInfo.due_items)
+
+        Write-Host "=======================================================" -ForegroundColor Yellow
+        if ($dueCount -eq 0) {
+            Write-Host "  Watchlist Status: 0 of $totalCount items due for update." -ForegroundColor Green
+            Write-Host "  All items are currently up to date!" -ForegroundColor Green
+            Write-Host "  Next item '$nextItem' will be due in $waitMin minutes." -ForegroundColor Gray
+        } else {
+            Write-Host "  Watchlist Status: $dueCount of $totalCount item(s) due for update." -ForegroundColor Yellow
+            $sample = if ($dueItems.Count -gt 6) { ($dueItems[0..5] -join ', ') + " (+$(($dueItems.Count - 6)) more)" } else { $dueItems -join ', ' }
+            Write-Host "  Items to scan: [$sample]" -ForegroundColor Cyan
+        }
+        Write-Host "=======================================================" -ForegroundColor Yellow
+    } catch {
+    }
+}
+
 $extraArgs = @()
 if ($Instance -ne "") {
     $extraArgs += @("--instance", $Instance)

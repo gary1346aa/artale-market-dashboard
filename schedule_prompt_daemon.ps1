@@ -252,17 +252,13 @@ function Show-Toast([string]$msg) {
 
 Write-Log '=========================================='
 Write-Log 'Artale Market Tracker Daemon Started.'
-Write-Log 'Schedule: Hourly (Every hour on the hour :00)'
+Write-Log 'Schedule: Initial Run Immediately -> Hourly (:00)'
 Write-Log 'Mode: 100% Silent Background (Both + Due, No Prompts)'
 Write-Log '=========================================='
 
-if ($TestNow -or $RunNow) {
-    $nextPrompt = (Get-Date).AddSeconds(-1)
-    Write-Log '[TEST/RUN NOW] Triggering immediate background collection...'
-} else {
-    $nextPrompt = Get-NextStandardTarget (Get-Date)
-    Write-Log "Next scheduled run: $($nextPrompt.ToString('yyyy-MM-dd HH:mm:ss'))"
-}
+# Run immediately once upon startup, then follow standard hourly schedule
+$nextPrompt = (Get-Date).AddSeconds(-1)
+Write-Log "Initial scan starting immediately. Subsequent runs will align to hourly (:00) schedule."
 
 while ($true) {
     $now = Get-Date

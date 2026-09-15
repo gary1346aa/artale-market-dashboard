@@ -14,6 +14,9 @@ WATCHLIST_FILE = Path(__file__).resolve().parent / "items_watchlist.json"
 JS_STANDALONE = Path(__file__).resolve().parent / "lightweight-charts.standalone.js"
 
 def classify_item(name: str) -> str:
+    skill_keywords = ['楓葉祝福', '挑釁', '技能書', '母書']
+    if any(k in name for k in skill_keywords):
+        return '技能書'
     cash_keywords = ['喇叭', '瞬移', '突襲', '背包', '護身符', '初始化', '加持器', '漫天花雨', '飄雪結晶']
     if any(k in name for k in cash_keywords):
         return '現金道具'
@@ -783,6 +786,12 @@ def generate_dashboard_html():
             border: 1px solid rgba(76, 175, 80, 0.25);
         }
 
+        .cat-skill {
+            background-color: rgba(255, 87, 34, 0.15);
+            color: #ff8a65;
+            border: 1px solid rgba(255, 87, 34, 0.25);
+        }
+
         .item-title-text {
             font-weight: 600;
             color: #ffffff;
@@ -1263,6 +1272,7 @@ def generate_dashboard_html():
                     <button class="pill-btn" data-cat="防具卷">防具卷 (<span id="count-arm">0</span>)</button>
                     <button class="pill-btn" data-cat="現金道具">現金道具 (<span id="count-cash">0</span>)</button>
                     <button class="pill-btn" data-cat="材料">材料 (<span id="count-mat">0</span>)</button>
+                    <button class="pill-btn" data-cat="技能書">技能書 (<span id="count-skill">0</span>)</button>
                 </div>
             </div>
             <div class="toolbar-row" id="rate-row">
@@ -1459,6 +1469,7 @@ def generate_dashboard_html():
 
         function getCatTagClass(cat) {
             switch(cat) {
+                case "技能書": return "cat-skill";
                 case "飾品卷": return "cat-acc";
                 case "武器卷": return "cat-wpn";
                 case "防具卷": return "cat-arm";
@@ -1470,6 +1481,7 @@ def generate_dashboard_html():
 
         function getCatShortName(cat) {
             switch(cat) {
+                case "技能書": return "技能";
                 case "飾品卷": return "飾品";
                 case "武器卷": return "武器";
                 case "防具卷": return "防具";
@@ -1689,7 +1701,7 @@ def generate_dashboard_html():
                 }
 
                 // Rate
-                if (currentCat !== "現金道具" && currentCat !== "材料" && currentRate !== "all") {
+                if (currentCat !== "現金道具" && currentCat !== "材料" && currentCat !== "技能書" && currentRate !== "all") {
                     if (it.rate !== currentRate) return false;
                 }
 
@@ -1792,6 +1804,7 @@ def generate_dashboard_html():
             document.getElementById("count-arm").textContent = summaryList.filter(s => s.category === "防具卷").length;
             document.getElementById("count-cash").textContent = summaryList.filter(s => s.category === "現金道具").length;
             document.getElementById("count-mat").textContent = summaryList.filter(s => s.category === "材料").length;
+            document.getElementById("count-skill").textContent = summaryList.filter(s => s.category === "技能書").length;
             updateFavoriteCounts();
         }
 
@@ -2062,7 +2075,7 @@ def generate_dashboard_html():
                 currentCat = btn.getAttribute("data-cat");
 
                 const rateRow = document.getElementById("rate-row");
-                if (currentCat === "現金道具" || currentCat === "材料") {
+                if (currentCat === "現金道具" || currentCat === "材料" || currentCat === "技能書") {
                     rateRow.style.display = "none";
                     currentRate = "all";
                 } else {

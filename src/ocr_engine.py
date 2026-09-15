@@ -101,9 +101,13 @@ def normalize_item_name(text: str) -> str:
     # Standardize '卷' to '卷軸' if missing '軸'
     cleaned = re.sub(r"卷(?!軸)", "卷軸", cleaned)
 
-    # Standardize missing or trailing percent signs on scrolls
-    cleaned = re.sub(r"(10|30|60|70|100)$", r"\1%", cleaned)
-    cleaned = re.sub(r"([0-9]+)[^0-9%]+$", r"\1%", cleaned)
+    # Standardize missing or trailing percent signs on scrolls only
+    if "卷" in cleaned:
+        cleaned = re.sub(r"(10|30|60|70|100)$", r"\1%", cleaned)
+        cleaned = re.sub(r"([0-9]+)[^0-9%]+$", r"\1%", cleaned)
+
+    # Strip [技能書] prefix if present in OCR
+    cleaned = re.sub(r"^\[?技能書\]?", "", cleaned)
 
     # Standardize '盔' prefix to '頭盔'
     if cleaned.startswith("盔") and not cleaned.startswith("頭盔"):
@@ -123,10 +127,15 @@ def normalize_item_name(text: str) -> str:
     if cleaned in watchlist:
         return cleaned
 
+    # Direct match ignoring whitespace (e.g. '楓葉祝福 20' <-> '楓葉祝福20')
+    for w in watchlist:
+        if w.replace(" ", "") == cleaned:
+            return w
+
     # Fuzzy match against watchlist (>70% match)
     best_match, best_score = None, 0
     for w in watchlist:
-        score = difflib.SequenceMatcher(None, cleaned, w).ratio()
+        score = difflib.SequenceMatcher(None, cleaned, w.replace(" ", "")).ratio()
         if score > best_score:
             best_score, best_match = score, w
 

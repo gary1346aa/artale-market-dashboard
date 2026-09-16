@@ -120,17 +120,19 @@ class MarketParser:
         curr_page = pagination[0] if pagination else 1
 
         for y1, y2 in self.ROW_BOUNDS:
-            # 1. Item Name
-            if self.expected_item_name:
-                item_name = self.expected_item_name
-            else:
-                name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
-                name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
-                raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
-                item_name = normalize_item_name(raw_name)
+            # 1. Item Name - Column 1
+            name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
+            name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
+            raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
+            item_name = normalize_item_name(raw_name)
 
+            if self.expected_item_name:
                 if not item_name or len(item_name) < 2:
-                    continue
+                    item_name = self.expected_item_name
+                elif self.expected_item_name in item_name or item_name in self.expected_item_name:
+                    item_name = self.expected_item_name
+            elif not item_name or len(item_name) < 2:
+                continue
 
             # 2. Total Price (Amount) - Column 2
             tot_box = self._scale_box(550, y1, 675, y2)
@@ -172,7 +174,8 @@ class MarketParser:
                 continue
 
             # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
-            quantity = max(1, min(3000, round(total_price / unit_price))) if (total_price and unit_price) else 1
+            # In Artale, maximum stack/bundle quantity limit in auction house is 9,900
+            quantity = max(1, min(9900, round(total_price / unit_price))) if (total_price and unit_price) else 1
 
             # Scrolls, equipment, and skill books category guard (single items)
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
@@ -211,17 +214,19 @@ class MarketParser:
         trades: List[MatchedTrade] = []
 
         for y1, y2 in self.ROW_BOUNDS:
-            # 1. Item Name
-            if self.expected_item_name:
-                item_name = self.expected_item_name
-            else:
-                name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
-                name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
-                raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
-                item_name = normalize_item_name(raw_name)
+            # 1. Item Name - Column 1
+            name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
+            name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
+            raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
+            item_name = normalize_item_name(raw_name)
 
+            if self.expected_item_name:
                 if not item_name or len(item_name) < 2:
-                    continue
+                    item_name = self.expected_item_name
+                elif self.expected_item_name in item_name or item_name in self.expected_item_name:
+                    item_name = self.expected_item_name
+            elif not item_name or len(item_name) < 2:
+                continue
 
             # 2. Total Price (Amount) - Column 2
             tot_box = self._scale_box(550, y1, 675, y2)
@@ -263,7 +268,8 @@ class MarketParser:
                 continue
 
             # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
-            quantity = max(1, min(3000, round(total_price / unit_price))) if (total_price and unit_price) else 1
+            # In Artale, maximum stack/bundle quantity limit in auction house is 9,900
+            quantity = max(1, min(9900, round(total_price / unit_price))) if (total_price and unit_price) else 1
 
             # Scrolls, equipment, and skill books category guard (single items)
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):

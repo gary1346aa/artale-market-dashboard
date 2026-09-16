@@ -104,12 +104,12 @@ class KlineAggregator:
                 if total_price and total_price > 30_000_000_000:
                     continue  # Ignore corrupt multi-billion rows
 
-                # Quantity sanity caps: scrolls/equipment max 20, all stackable items max 3,000 in Artale
+                # Quantity sanity caps: scrolls/equipment max 20, all stackable items max 9,900 in Artale
                 if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                     if qty > 20:
                         qty = 1
                         total_price = unit_price
-                elif qty > 3000:
+                elif qty > 9900:
                     qty = 1
                     total_price = unit_price
 

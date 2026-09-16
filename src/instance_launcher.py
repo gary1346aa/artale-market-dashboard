@@ -52,31 +52,38 @@ class InstanceLauncher:
         """
         Verifies if the Artale Auction House UI is currently open on screen.
         Uses robust multi-landmark scoring across invariant UI elements:
-        1. White search box at top
-        2. Bright green '開始搜尋' button in left sidebar
-        3. Active cyan tab indicator ('查詢' or '市價')
-        4. Dark gray exit button '離開' at top right
+        1. Free Market Minimap is covered (not bright white at 30, 18)
+        2. Bright green '開始搜尋' button in left sidebar (280..340, 535..558)
+        3. Dark gray exit button container with white text '離開' at (975..1040, 32..48)
+        4. Dark frame corner at (100, 120)
         """
         frame = win_mgr.capture_frame()
         if not frame or frame.width < 500 or frame.height < 300:
             return False
         try:
-            # Landmark 1: White search box
-            box_ok = any(frame.getpixel((x, 48))[0] > 180 and frame.getpixel((x, 48))[1] > 180 for x in (240, 280, 320))
+            # 1. Minimap check: In Free Market / World, minimap at (30, 18) is bright white (> 200, > 200, > 200)
+            p_mm = frame.getpixel((30, 18))[:3]
+            if p_mm[0] > 200 and p_mm[1] > 200 and p_mm[2] > 200:
+                return False
 
-            # Landmark 2: Green '開始搜尋' button (dominant green in sidebar button region)
-            green_ok = any(frame.getpixel((x, y))[1] > 110 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[2] + 35 
-                           for x in (290, 312, 335) for y in (540, 546, 552))
+            # 2. Sidebar green '開始搜尋' button: x in 280..340, y in 535..558
+            green_count = sum(1 for x in range(280, 340, 5) for y in range(535, 558, 3) 
+                              if frame.getpixel((x, y))[1] > 130 and frame.getpixel((x, y))[0] > 100 
+                              and frame.getpixel((x, y))[2] < 70 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[0] + 15)
+            green_ok = green_count >= 5
 
-            # Landmark 3: Active cyan tab ('查詢' x ~ 200 or '市價' x ~ 400 at y ~ 120)
-            cyan_ok = any(frame.getpixel((x, 120))[1] > 80 and frame.getpixel((x, 120))[2] > 80 and frame.getpixel((x, 120))[0] < 80
-                          for x in (180, 220, 260, 360, 400, 440))
+            # 3. Top-right '離開' button dark container with white text
+            p_leave_bg = frame.getpixel((975, 40))[:3]
+            bg_ok = (20 <= p_leave_bg[0] <= 55 and 20 <= p_leave_bg[1] <= 55 and 20 <= p_leave_bg[2] <= 55)
+            text_count = sum(1 for x in range(990, 1040, 3) for y in range(32, 48, 2)
+                             if all(c > 170 for c in frame.getpixel((x, y))[:3]))
+            leave_ok = bg_ok and text_count >= 4
 
-            # Landmark 4: Dark top exit button / top bar border
-            top_ok = any(frame.getpixel((x, 48))[0] < 60 and frame.getpixel((x, 48))[1] < 60 for x in (780, 790, 800))
+            # 4. Auction house header tab area (100, 120) dark frame
+            p_hdr = frame.getpixel((100, 120))[:3]
+            hdr_ok = (p_hdr[0] < 70 and p_hdr[1] < 70 and p_hdr[2] < 70)
 
-            score = sum([box_ok, green_ok, cyan_ok, top_ok])
-            return score >= 2
+            return sum([green_ok, leave_ok, hdr_ok]) >= 2
         except Exception as e:
             logger.error(f"Error in launcher is_auction_open: {e}")
             return False

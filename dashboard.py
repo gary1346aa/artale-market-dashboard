@@ -126,7 +126,11 @@ def export_dashboard_data() -> Dict:
             cursor.execute("""
                 SELECT min(unit_price) FROM active_listings
                 WHERE item_name = ? AND unit_price >= ?
-            """, (item, min_ask_threshold))
+                  AND replace(captured_at, 'T', ' ') >= (
+                      SELECT datetime(replace(max(captured_at), 'T', ' '), '-15 minutes')
+                      FROM active_listings WHERE item_name = ?
+                  )
+            """, (item, min_ask_threshold, item))
             ask_row = cursor.fetchone()
             lowest_ask = ask_row[0] if ask_row and ask_row[0] else None
             data_by_item[item]["lowest_ask"] = lowest_ask

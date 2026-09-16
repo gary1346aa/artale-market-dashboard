@@ -73,22 +73,41 @@ class MarketParser:
     def parse_pagination(self) -> Optional[Tuple[int, int]]:
         """
         Extracts (current_page, total_pages) from the pagination control (e.g. '1 / 20' or '8 / 8').
-        Uses multi-box sampling and character normalization.
+        Uses multi-box sampling, raw 1x followed by 2x Bicubic fallback, and dual-language normalization.
         """
-        for box_coords in [
+        boxes = [
             (568, 88, 688, 124),  # Scaled on 1280x720: (710, 110, 860, 155)
             (576, 92, 688, 128),  # Scaled on 1280x720: (720, 115, 860, 160)
             (568, 88, 664, 128)
-        ]:
+        ]
+        # Pass 1: raw 1x resolution (preserves crisp pixel art typography)
+        for box_coords in boxes:
             box = self._scale_box(*box_coords)
             crop = self.raw_image.crop(box)
-            text = ocr_image(crop, lang="en-US")
-            cleaned = text.replace("B", "8").replace("O", "0").replace("o", "0").replace("S", "5").replace("s", "5")
-            match = re.search(r"(\d+)\s*[/\|lI\\]\s*(\d+)", cleaned)
-            if match:
-                curr, total = int(match.group(1)), int(match.group(2))
-                if 1 <= curr <= total:
-                    return (curr, total)
+            for lang in ["en-US", "zh-Hant-TW"]:
+                text = ocr_image(crop, lang=lang)
+                cleaned = text.replace("B", "8").replace("O", "0").replace("o", "0").replace("S", "5").replace("s", "5")
+                match = re.search(r"(\d+)\s*[/\|lI\\]\s*(\d+)", cleaned)
+                if match:
+                    curr, total = int(match.group(1)), int(match.group(2))
+                    if 1 <= curr <= total:
+                        return (curr, total)
+
+        # Pass 2: 2x BICUBIC magnification fallback
+        for box_coords in boxes:
+            box = self._scale_box(*box_coords)
+            crop = self.raw_image.crop(box)
+            w, h = crop.size
+            resized = crop.resize((w * 2, h * 2), Image.Resampling.BICUBIC)
+            for lang in ["zh-Hant-TW", "en-US"]:
+                text = ocr_image(resized, lang=lang)
+                cleaned = text.replace("B", "8").replace("O", "0").replace("o", "0").replace("S", "5").replace("s", "5")
+                match = re.search(r"(\d+)\s*[/\|lI\\]\s*(\d+)", cleaned)
+                if match:
+                    curr, total = int(match.group(1)), int(match.group(2))
+                    if 1 <= curr <= total:
+                        return (curr, total)
+
         return None
 
     def parse_active_listings(self) -> List[ActiveListing]:

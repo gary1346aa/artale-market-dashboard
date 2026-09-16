@@ -63,34 +63,43 @@ class ParallelCollector:
             collector = MarketCollector(instance_name=inst_name, use_adb=True, allow_instance_rotation=False)
             collector.adb.device_id = device_id
 
-            if not collector.ensure_focus():
-                logger.error(f"[{device_id}] Could not verify or enter Auction House. Worker aborting.")
+            ready = False
+            for attempt in range(1, 4):
+                if collector.ensure_focus(max_retries=2):
+                    ready = True
+                    break
+                logger.warning(f"[{device_id}] Auction House entry attempt {attempt}/3 failed. Checking cooldown and retrying...")
+                time.sleep(3.0)
+
+            if not ready:
+                logger.error(f"[{device_id}] Could not verify or enter Auction House after 3 attempts. Worker aborting.")
                 return
 
             logger.info(f"[{device_id}] Ready. Draining task queue dynamically...")
-            while not task_queue.empty():
-                try:
-                    idx, total_total, item = task_queue.get_nowait()
-                except queue.Empty:
-                    break
+            try:
+                while not task_queue.empty():
+                    try:
+                        idx, total_total, item = task_queue.get_nowait()
+                    except queue.Empty:
+                        break
 
-                with progress_lock:
-                    completed_count += 1
-                    curr_progress = completed_count
+                    with progress_lock:
+                        completed_count += 1
+                        curr_progress = completed_count
 
-                logger.info(f"[{device_id}] -> Scanning [{idx}/{total_total}] (Batch Progress: {curr_progress}/{total_items}): '{item}'")
+                    logger.info(f"[{device_id}] -> Scanning [{idx}/{total_total}] (Batch Progress: {curr_progress}/{total_items}): '{item}'")
 
-                try:
-                    collector.run_query_collection(item, max_pages=effective_pages, target_tab=target_tab)
-                except Exception as e:
-                    logger.error(f"[{device_id}] Error scanning '{item}': {e}")
-                    with failed_lock:
-                        failed_items.append(item)
-                finally:
-                    task_queue.task_done()
-
-            collector.shutdown()
-            logger.info(f"[{device_id}] Work queue drained. Worker shutdown.")
+                    try:
+                        collector.run_query_collection(item, max_pages=effective_pages, target_tab=target_tab)
+                    except Exception as e:
+                        logger.error(f"[{device_id}] Error scanning '{item}': {e}")
+                        with failed_lock:
+                            failed_items.append(item)
+                    finally:
+                        task_queue.task_done()
+            finally:
+                collector.shutdown()
+                logger.info(f"[{device_id}] Work queue drained. Worker shutdown and exited Auction House.")
 
         # Spawn worker threads
         threads = []
@@ -109,12 +118,14 @@ class ParallelCollector:
         if failed_items and self.devices:
             logger.info(f"=== Autonomous Retry Pass: Retrying {len(failed_items)} failed items ===")
             retry_collector = MarketCollector(instance_name=DEVICE_TO_INSTANCE.get(self.devices[0], self.devices[0]), use_adb=True)
-            for f_item in failed_items:
-                try:
-                    retry_collector.run_query_collection(f_item, max_pages=max_pages, target_tab=target_tab)
-                except Exception as e:
-                    logger.error(f"Retry failed for '{f_item}': {e}")
-            retry_collector.shutdown()
+            try:
+                for f_item in failed_items:
+                    try:
+                        retry_collector.run_query_collection(f_item, max_pages=max_pages, target_tab=target_tab)
+                    except Exception as e:
+                        logger.error(f"Retry failed for '{f_item}': {e}")
+            finally:
+                retry_collector.shutdown()
 
         # Autonomous Tier Evaluation Pass
         try:

@@ -2,11 +2,35 @@ import subprocess
 import base64
 import time
 import io
+import os
+import json
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List, Union
 from PIL import Image
 
 logger = logging.getLogger("AdbController")
+
+_GLOBAL_AUCTION_EXIT_TIMES: Dict[str, float] = {}
+COOLDOWN_FILE = os.path.join("data", "auction_cooldowns.json")
+
+def _load_cooldowns() -> Dict[str, float]:
+    try:
+        if os.path.exists(COOLDOWN_FILE):
+            with open(COOLDOWN_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def _save_cooldown(device_id: str, ts: float):
+    try:
+        os.makedirs("data", exist_ok=True)
+        cd = _load_cooldowns()
+        cd[device_id] = ts
+        with open(COOLDOWN_FILE, "w", encoding="utf-8") as f:
+            json.dump(cd, f, indent=2)
+    except Exception as e:
+        logger.debug(f"Could not save auction cooldown to disk: {e}")
 
 class AdbController:
     """
@@ -22,8 +46,11 @@ class AdbController:
     POS_PRICE_HEADER = (945, 170)
     POS_NEXT_PAGE = (850, 140)
     POS_FIRST_PAGE = (666, 140)
-    POS_MENU_BUTTON = (1150, 105)
-    POS_AUCTION_BUTTON = (1240, 620)
+    POS_MENU_BUTTON = (1171, 116)
+    POS_AUCTION_BUTTON = (1239, 616)
+    POS_LEAVE_AUCTION = (1015, 45)
+    POS_CONFIRM_EXIT = (635, 615)
+    POS_STOP_DIALOG = (349, 461)
 
     @classmethod
     def list_attached_devices(cls, adb_path: str = DEFAULT_ADB) -> List[str]:
@@ -57,23 +84,90 @@ class AdbController:
         except Exception as e:
             logger.warning(f"Could not auto-enable ADBKeyBoard on {self.device_id}: {e}")
 
-    def screencap(self) -> Optional[Image.Image]:
+    def screencap(
+        self,
+        crop: Optional[Tuple[int, int, int, int]] = None,
+        as_jpeg: bool = False,
+        jpeg_quality: int = 85
+    ) -> Optional[Image.Image]:
         """
-        Captures the current 1280x720 display buffer directly from Android SurfaceFlinger.
-        Takes ~130ms and cannot be occluded by other Windows windows.
+        Captures the display buffer via high-performance RAW SurfaceFlinger dump.
+        Avoids Android-side PNG compression overhead (~3x faster, ~110-125ms total).
+        If crop=(x1, y1, x2, y2) is provided, directly slices the memory buffer BEFORE
+        image instantiation and JPEG encoding, optimizing both memory and speed.
+        Returns PIL RGB Image.
         """
+        try:
+            p = subprocess.run(
+                [self.adb_path, "-s", self.device_id, "exec-out", "screencap"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=2.0
+            )
+            if p.returncode == 0 and p.stdout and len(p.stdout) >= 16:
+                data = p.stdout
+                w = int.from_bytes(data[0:4], "little")
+                h = int.from_bytes(data[4:8], "little")
+                expected = w * h * 4
+                if len(data) >= 16 + expected:
+                    if crop:
+                        x1 = max(0, min(crop[0], w))
+                        y1 = max(0, min(crop[1], h))
+                        x2 = max(x1, min(crop[2], w))
+                        y2 = max(y1, min(crop[3], h))
+                        cw, ch = x2 - x1, y2 - y1
+                        stride = w * 4
+                        crop_bytes = b"".join(data[16 + y * stride + x1 * 4 : 16 + y * stride + x2 * 4] for y in range(y1, y2))
+                        img = Image.frombytes("RGBA", (cw, ch), crop_bytes, "raw", "RGBA").convert("RGB")
+                    else:
+                        img = Image.frombytes("RGBA", (w, h), data[16:16 + expected], "raw", "RGBA").convert("RGB")
+
+                    if as_jpeg:
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG", quality=jpeg_quality)
+                        buf.seek(0)
+                        return Image.open(buf)
+                    return img
+        except Exception as e:
+            logger.debug(f"ADB raw screencap failed on {self.device_id}: {e}")
+
+        # Resilient fallback: standard PNG screencap
         try:
             p = subprocess.run(
                 [self.adb_path, "-s", self.device_id, "exec-out", "screencap", "-p"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=5
+                timeout=2.0
             )
             if p.returncode == 0 and p.stdout:
-                return Image.open(io.BytesIO(p.stdout)).convert("RGB")
+                img = Image.open(io.BytesIO(p.stdout)).convert("RGB")
+                if crop:
+                    img = img.crop(crop)
+                if as_jpeg:
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=jpeg_quality)
+                    buf.seek(0)
+                    return Image.open(buf)
+                return img
         except Exception as e:
-            logger.error(f"ADB screencap failed on {self.device_id}: {e}")
+            logger.error(f"ADB fallback screencap failed on {self.device_id}: {e}")
         return None
+
+    def save_screencap_jpg(
+        self,
+        filepath: Union[str, any],
+        crop: Optional[Tuple[int, int, int, int]] = None,
+        quality: int = 85
+    ) -> bool:
+        """
+        Convenience method to capture, crop in-memory, and write a compact JPEG directly to disk
+        for rapid visual verification during development.
+        """
+        img = self.screencap(crop=crop, as_jpeg=True, jpeg_quality=quality)
+        if img:
+            img.save(str(filepath), format="JPEG", quality=quality)
+            return True
+        return False
 
     def tap(self, x: int, y: int):
         """Taps the exact canvas coordinate on screen without moving host mouse."""
@@ -126,11 +220,49 @@ class AdbController:
         except Exception:
             return False
 
+    def is_exit_cooldown_dialog_open(self, frame: Optional[Image.Image] = None) -> bool:
+        """
+        Checks if '退出後需等待一段時間才能再進入，請稍後再試。' notice is open after leaving auction.
+        Detected via confirm button around (815, 450) and blue modal background around (600, 300).
+        """
+        if frame is None:
+            frame = self.screencap()
+        if not frame:
+            return False
+        try:
+            p_btn = frame.getpixel((815, 450))[:3]
+            btn_ok = (70 <= p_btn[0] <= 130 and 30 <= p_btn[1] <= 80 and p_btn[2] <= 50)
+            p_bg = frame.getpixel((600, 300))[:3]
+            bg_ok = (20 <= p_bg[0] <= 65 and 40 <= p_bg[1] <= 95 and 60 <= p_bg[2] <= 130)
+            return btn_ok and bg_ok
+        except Exception:
+            return False
+
+    def is_npc_dialog_open(self, frame: Optional[Image.Image] = None) -> bool:
+        """
+        Checks if an NPC dialogue (e.g. 璐璐 / 水晶商店) with [停止對話] is open in Free Market.
+        Detected via green button around (349, 461) and grey dialog box at (500, 300).
+        """
+        if frame is None:
+            frame = self.screencap()
+        if not frame:
+            return False
+        try:
+            p_btn = frame.getpixel((349, 461))[:3]
+            btn_ok = (p_btn[1] > 160 and p_btn[1] >= p_btn[0] and p_btn[1] > p_btn[2] + 40)
+            p_bg = frame.getpixel((500, 300))[:3]
+            bg_ok = (p_bg[0] > 220 and p_bg[1] > 220 and p_bg[2] > 220)
+            return btn_ok and bg_ok
+        except Exception:
+            return False
+
     def handle_lingering_popups(self, frame: Optional[Image.Image] = None) -> bool:
         """
-        Actively checks for and dismisses '前往大廳' (via tapping [ 否 ]) or '沒有查詢的道具' modal (via tap).
-        NOTE: Never send ESC (keyevent 111) in Artale/MapleStory Worlds, because ESC is the in-game
-        hotkey that actually summons the '前往大廳' prompt!
+        Actively checks for and dismisses:
+        1. '前往大廳' prompt (via tapping [ 否 ])
+        2. Exit cooldown modal '退出後需等待一段時間...' (via tapping [ 確定 ])
+        3. Free Market NPC dialog '歡迎來到 Artale...' (via tapping [ 停止對話 ])
+        4. Warning modal '沒有查詢的道具。' / '請求已取消。' (via neutral tap)
         """
         if frame is None:
             frame = self.screencap()
@@ -143,9 +275,21 @@ class AdbController:
             time.sleep(0.4)
             return True
 
+        if self.is_exit_cooldown_dialog_open(frame):
+            logger.info(f"Dismissing auction exit cooldown notice on {self.device_id} by tapping [ 確定 ]...")
+            self.tap(*self.POS_CONFIRM_EXIT)
+            time.sleep(0.4)
+            return True
+
+        if self.is_npc_dialog_open(frame):
+            logger.info(f"Dismissing Free Market NPC dialogue on {self.device_id} by tapping [ 停止對話 ]...")
+            self.tap(*self.POS_STOP_DIALOG)
+            time.sleep(0.4)
+            return True
+
         if self.is_error_modal_open(frame):
-            logger.info(f"Dismissing error modal on {self.device_id} via neutral tap...")
-            self.tap(640, 580)
+            logger.info(f"Dismissing warning/error modal on {self.device_id} via neutral tap...")
+            self.tap(640, 420)
             time.sleep(0.4)
             return True
 
@@ -168,31 +312,43 @@ class AdbController:
     def is_auction_open(self, frame: Optional[Image.Image] = None) -> bool:
         """
         Verifies if the Auction House modal is currently open.
-        Automatically cancels '前往大廳' or error popups if detected.
+        Automatically cancels popups/dialogs if detected.
         """
         if frame is None:
             frame = self.screencap()
         if not frame or frame.width < 1000 or frame.height < 600:
             return False
 
-        # If a popup was covering the auction house, dismiss it and re-capture
+        # Dismiss any covering popup first
         if self.handle_lingering_popups(frame):
             frame = self.screencap()
             if not frame:
                 return False
 
         try:
-            # Landmark 1: White search box (280, 48)
-            box_ok = any(frame.getpixel((x, 48))[0] > 180 and frame.getpixel((x, 48))[1] > 180 for x in (240, 280, 320))
-            # Landmark 2: Green '開始搜尋' button around (312, 553)
-            green_ok = any(frame.getpixel((x, y))[1] > 110 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[2] + 35 
-                           for x in (290, 312, 335) for y in (540, 546, 552))
-            # Landmark 3: Active cyan tab ('查詢' x ~ 200 or '市價' x ~ 400 at y ~ 90)
-            cyan_ok = any(frame.getpixel((x, y))[1] > 80 and frame.getpixel((x, y))[2] > 80 and frame.getpixel((x, y))[0] < 80
-                          for x in (200, 240, 400, 440) for y in (85, 90, 95))
-            # Landmark 4: Dark top exit button
-            top_ok = any(frame.getpixel((x, 48))[0] < 60 and frame.getpixel((x, 48))[1] < 60 for x in (780, 790, 800))
-            return sum([box_ok, green_ok, cyan_ok, top_ok]) >= 2
+            # 1. Minimap check: In Free Market / World, minimap at (30, 18) is bright white (> 200, > 200, > 200)
+            p_mm = frame.getpixel((30, 18))[:3]
+            if p_mm[0] > 200 and p_mm[1] > 200 and p_mm[2] > 200:
+                return False
+
+            # 2. Sidebar green '開始搜尋' button: x in 280..340, y in 535..558
+            green_count = sum(1 for x in range(280, 340, 5) for y in range(535, 558, 3) 
+                              if frame.getpixel((x, y))[1] > 130 and frame.getpixel((x, y))[0] > 100 
+                              and frame.getpixel((x, y))[2] < 70 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[0] + 15)
+            green_ok = green_count >= 5
+
+            # 3. Top-right '離開' button dark container with white text
+            p_leave_bg = frame.getpixel((975, 40))[:3]
+            bg_ok = (20 <= p_leave_bg[0] <= 55 and 20 <= p_leave_bg[1] <= 55 and 20 <= p_leave_bg[2] <= 55)
+            text_count = sum(1 for x in range(990, 1040, 3) for y in range(32, 48, 2)
+                             if all(c > 170 for c in frame.getpixel((x, y))[:3]))
+            leave_ok = bg_ok and text_count >= 4
+
+            # 4. Auction house header tab area (100, 120) dark frame
+            p_hdr = frame.getpixel((100, 120))[:3]
+            hdr_ok = (p_hdr[0] < 70 and p_hdr[1] < 70 and p_hdr[2] < 70)
+
+            return sum([green_ok, leave_ok, hdr_ok]) >= 2
         except Exception as e:
             logger.debug(f"Error checking is_auction_open: {e}")
             return False
@@ -217,15 +373,76 @@ class AdbController:
             logger.debug(f"Error checking is_free_market: {e}")
             return False
 
-    def enter_auction_from_free_market(self) -> bool:
+    def record_auction_exit(self):
+        """Records timestamp when character left the Auction House to memory and disk."""
+        now = time.time()
+        _GLOBAL_AUCTION_EXIT_TIMES[self.device_id] = now
+        _save_cooldown(self.device_id, now)
+        logger.info(f"[{self.device_id}] Recorded Auction exit timestamp ({now:.0f}). 60-second cooldown initiated.")
+
+    def get_auction_cooldown_remaining(self, cooldown_sec: float = 62.0) -> float:
+        """Returns remaining seconds of the 60s in-game auction re-entry cooldown (with 2s safety buffer)."""
+        last_exit = _GLOBAL_AUCTION_EXIT_TIMES.get(self.device_id, 0.0)
+        disk_cds = _load_cooldowns()
+        disk_exit = disk_cds.get(self.device_id, 0.0)
+        actual_last = max(last_exit, disk_exit)
+        elapsed = time.time() - actual_last
+        remaining = cooldown_sec - elapsed
+        return max(0.0, remaining)
+
+    def leave_auction_to_free_market(self, max_wait_sec: int = 8) -> bool:
+        """
+        Taps [離開 >] button at (1015, 45) to safely exit the Auction House,
+        dismisses the exit cooldown notice / NPC dialogue,
+        and records the exit timestamp for the 60-second re-entry cooldown.
+        """
+        if not self.is_auction_open():
+            self.handle_lingering_popups()
+            return True
+
+        logger.info(f"[{self.device_id}] Exiting Auction House to Free Market to prevent idle timeout...")
+        self.tap(*self.POS_LEAVE_AUCTION)
+        self.record_auction_exit()
+
+        start_t = time.time()
+        while time.time() - start_t < max_wait_sec:
+            time.sleep(0.8)
+            self.handle_lingering_popups()
+            if not self.is_auction_open():
+                logger.info(f"[{self.device_id}] Successfully exited Auction House to Free Market.")
+                return True
+        return not self.is_auction_open()
+
+    def enter_auction_from_free_market(self, max_wait_sec: int = 12) -> bool:
         """
         Enters the Auction House from the Free Market using the mobile menu shortcut.
-        1. Tap MENU (1150, 105)
-        2. Tap 拍賣場 (1240, 620)
+        1. Checks and waits out the 60-second in-game cooldown if recently exited.
+        2. Clears any blocking NPC dialogue or popups.
+        3. Taps MENU (1171, 116) -> 拍賣場 (1239, 616).
+        4. Polls progressively up to max_wait_sec instead of failing prematurely.
         """
-        logger.info(f"Opening Auction House from Free Market on {self.device_id}...")
-        self.tap(self.POS_MENU_BUTTON[0], self.POS_MENU_BUTTON[1])
-        time.sleep(0.5)
-        self.tap(self.POS_AUCTION_BUTTON[0], self.POS_AUCTION_BUTTON[1])
-        time.sleep(2.0)
+        # 1. Enforce 60s re-entry cooldown gate
+        remaining = self.get_auction_cooldown_remaining()
+        if remaining > 0:
+            logger.info(f"[{self.device_id}] In-game auction cooldown active. Waiting {remaining:.1f}s before entering...")
+            time.sleep(remaining)
+
+        # Clear any lingering NPC dialogs / popups blocking the screen
+        self.handle_lingering_popups()
+
+        logger.info(f"[{self.device_id}] Opening Auction House via Free Market menu...")
+        self.tap(*self.POS_MENU_BUTTON)
+        time.sleep(0.7)
+        self.tap(*self.POS_AUCTION_BUTTON)
+
+        # 2. Progressive polling window (up to max_wait_sec)
+        start_t = time.time()
+        while time.time() - start_t < max_wait_sec:
+            time.sleep(1.0)
+            if self.is_auction_open():
+                logger.info(f"[{self.device_id}] Auction House opened successfully.")
+                return True
+            self.handle_lingering_popups()
+
+        logger.warning(f"[{self.device_id}] Auction House did not open within {max_wait_sec}s.")
         return self.is_auction_open()

@@ -78,7 +78,14 @@ class MarketCollector:
         self.ocr_worker = AsyncOcrWorker()
 
         if self.use_adb:
-            dev_id = INSTANCE_TO_DEVICE.get(self.current_instance, "emulator-5558")
+            attached = AdbController.list_attached_devices()
+            rev_map = {v: k for k, v in INSTANCE_TO_DEVICE.items()}
+            dev_id = INSTANCE_TO_DEVICE.get(self.current_instance)
+            if (not instance_name or dev_id not in attached) and attached:
+                dev_id = attached[0]
+                self.current_instance = rev_map.get(dev_id, dev_id)
+            elif not dev_id:
+                dev_id = attached[0] if attached else "emulator-5560"
             self.adb = AdbController(device_id=dev_id)
             logger.info(f"Initialized ADB background engine on device '{dev_id}' for '{self.current_instance}'.")
         else:
@@ -111,16 +118,21 @@ class MarketCollector:
         logger.info(f"Switched successfully to '{instance_name}'.")
         return True
 
-    def ensure_focus(self) -> bool:
+    def ensure_focus(self, max_retries: int = 3) -> bool:
         if self.use_adb and self.adb:
-            if self.adb.is_auction_open():
-                return True
-            if self.adb.is_free_market():
-                logger.info(f"Instance '{self.current_instance}' detected in Free Market. Entering Auction House via menu...")
-                if self.adb.enter_auction_from_free_market():
-                    logger.info("Successfully entered Auction House via ADB menu.")
+            for attempt in range(1, max_retries + 1):
+                if self.adb.is_auction_open():
                     return True
-            logger.warning(f"Instance '{self.current_instance}' ({self.adb.device_id}) is not currently in the Auction House.")
+
+                logger.info(f"Instance '{self.current_instance}' ({self.adb.device_id}) opening Auction House (attempt {attempt}/{max_retries})...")
+                if self.adb.enter_auction_from_free_market(max_wait_sec=8):
+                    logger.info(f"Successfully entered Auction House on '{self.current_instance}'.")
+                    return True
+
+                if attempt < max_retries:
+                    time.sleep(2.0)
+
+            logger.warning(f"Instance '{self.current_instance}' ({self.adb.device_id}) failed to enter Auction House after {max_retries} attempts.")
             return False
 
         if not self.win_mgr.find_window():
@@ -139,6 +151,14 @@ class MarketCollector:
                 return False
         return True
 
+    def leave_auction(self) -> bool:
+        """
+        Safely exits the Auction House to the Free Market to prevent idle timeout.
+        """
+        if self.use_adb and self.adb:
+            return self.adb.leave_auction_to_free_market()
+        return True
+
     def is_auction_open(self) -> bool:
         """
         Checks whether the Auction House modal is currently open.
@@ -150,13 +170,29 @@ class MarketCollector:
         if not frame or frame.width < 500 or frame.height < 300:
             return False
         try:
-            box_ok = any(frame.getpixel((x, 48))[0] > 180 and frame.getpixel((x, 48))[1] > 180 for x in (240, 280, 320))
-            green_ok = any(frame.getpixel((x, y))[1] > 110 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[2] + 35 
-                           for x in (290, 312, 335) for y in (540, 546, 552))
-            cyan_ok = any(frame.getpixel((x, 120))[1] > 80 and frame.getpixel((x, 120))[2] > 80 and frame.getpixel((x, 120))[0] < 80
-                          for x in (180, 220, 260, 360, 400, 440))
-            top_ok = any(frame.getpixel((x, 48))[0] < 60 and frame.getpixel((x, 48))[1] < 60 for x in (780, 790, 800))
-            return sum([box_ok, green_ok, cyan_ok, top_ok]) >= 2
+            # 1. Minimap check: In Free Market / World, minimap at (30, 18) is bright white (> 200, > 200, > 200)
+            p_mm = frame.getpixel((30, 18))[:3]
+            if p_mm[0] > 200 and p_mm[1] > 200 and p_mm[2] > 200:
+                return False
+
+            # 2. Sidebar green '開始搜尋' button: x in 280..340, y in 535..558
+            green_count = sum(1 for x in range(280, 340, 5) for y in range(535, 558, 3) 
+                              if frame.getpixel((x, y))[1] > 130 and frame.getpixel((x, y))[0] > 100 
+                              and frame.getpixel((x, y))[2] < 70 and frame.getpixel((x, y))[1] > frame.getpixel((x, y))[0] + 15)
+            green_ok = green_count >= 5
+
+            # 3. Top-right '離開' button dark container with white text
+            p_leave_bg = frame.getpixel((975, 40))[:3]
+            bg_ok = (20 <= p_leave_bg[0] <= 55 and 20 <= p_leave_bg[1] <= 55 and 20 <= p_leave_bg[2] <= 55)
+            text_count = sum(1 for x in range(990, 1040, 3) for y in range(32, 48, 2)
+                             if all(c > 170 for c in frame.getpixel((x, y))[:3]))
+            leave_ok = bg_ok and text_count >= 4
+
+            # 4. Auction house header tab area (100, 120) dark frame
+            p_hdr = frame.getpixel((100, 120))[:3]
+            hdr_ok = (p_hdr[0] < 70 and p_hdr[1] < 70 and p_hdr[2] < 70)
+
+            return sum([green_ok, leave_ok, hdr_ok]) >= 2
         except Exception as e:
             logger.error(f"Error in is_auction_open: {e}")
             return False
@@ -181,10 +217,8 @@ class MarketCollector:
         Switches to 'query' (查詢) or 'market' (市價) tab.
         """
         if target_tab == "query":
-            logger.info("Switching to [查詢] (Active Listings) tab...")
             self.click_ref(*self.POS_QUERY_TAB)
         else:
-            logger.info("Switching to [市價] (Market Trades) tab...")
             self.click_ref(*self.POS_MARKET_TAB)
             
         if self.use_adb and self.adb:
@@ -204,26 +238,22 @@ class MarketCollector:
 
         if self.use_adb and self.adb:
             if reuse_existing:
-                logger.info(f"Reusing search bar keyword via ADB: '{keyword}' (fast submit)")
+                logger.debug(f"Reusing search bar keyword via ADB: '{keyword}' (fast submit)")
                 self.adb.tap(*self.adb.POS_QUICK_SEARCH)
-                time.sleep(0.3)
-                self.adb.tap(*self.adb.POS_CONFIRM_INPUT)
-                time.sleep(0.3)
+                time.sleep(0.2)
                 self.adb.press_enter()
-                time.sleep(1.0)
+                time.sleep(0.4)
                 self.adb.handle_lingering_popups()
             else:
                 logger.info(f"Searching for item via ADB: '{keyword}'")
                 self.adb.tap(*self.adb.POS_QUICK_SEARCH)
-                time.sleep(0.3)
+                time.sleep(0.25)
                 self.adb.input_chinese(keyword)
-                time.sleep(0.2)
-                self.adb.tap(*self.adb.POS_CONFIRM_INPUT)
-                time.sleep(0.3)
+                time.sleep(0.15)
                 self.adb.press_enter()
-                time.sleep(1.0)
+                time.sleep(0.4)
                 self.adb.handle_lingering_popups()
-            time.sleep(0.5)
+            time.sleep(0.2)
             return True
 
         search_pt = self.win_mgr.to_screen_coords(*self.POS_QUICK_SEARCH)
@@ -232,7 +262,7 @@ class MarketCollector:
             return False
 
         if reuse_existing:
-            logger.info(f"Reusing search bar keyword: '{keyword}' (fast submit)")
+            logger.debug(f"Reusing search bar keyword: '{keyword}' (fast submit)")
             submit_existing_search(search_pt[0], search_pt[1], confirm_pt=confirm_pt)
         else:
             logger.info(f"Searching for item: '{keyword}'")
@@ -253,7 +283,7 @@ class MarketCollector:
 
         try:
             os.makedirs("data", exist_ok=True)
-            frame.save("data/last_captured_frame.png")
+            frame.save("data/last_captured_frame.jpg", format="JPEG", quality=85)
         except Exception:
             pass
 
@@ -264,11 +294,11 @@ class MarketCollector:
 
         if tab == "market":
             save_matched_trades(records)
-            logger.info(f"[市價] Captured {len(records)} completed trades from page.")
+            logger.debug(f"[市價] Captured {len(records)} completed trades from page.")
             signature = tuple((r.item_name, r.matched_unit_price, r.trade_time) for r in records)
         else:
             save_active_listings(records)
-            logger.info(f"[查詢] Captured {len(records)} active listings from page.")
+            logger.debug(f"[查詢] Captured {len(records)} active listings from page.")
             signature = tuple((r.item_name, r.unit_price, r.total_price) for r in records)
 
         return {
@@ -279,7 +309,7 @@ class MarketCollector:
             "signature": signature if records else None
         }
 
-    def paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False):
+    def paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, initial_frame: Optional[Image.Image] = None):
         """
         Scrapes current tab across pages using pipelined asynchronous OCR.
         Fast Micro-OCR path: Reads (curr_p, total_p) on Page 1 in ~15ms, then streams
@@ -290,48 +320,56 @@ class MarketCollector:
         tab = "market" if is_market else "query"
         self.ocr_worker.reset_signature()
 
-        # 1. Capture Page 1 frame
-        frame1 = self.capture_frame()
+        # 1. Capture Page 1 frame (or reuse confirmed frame from sort verification)
+        frame1 = initial_frame if initial_frame is not None else self.capture_frame()
         if not frame1:
             logger.warning("Frame capture returned empty on page 1.")
             return
-
-        try:
-            os.makedirs("data", exist_ok=True)
-            frame1.save("data/last_captured_frame.png")
-        except Exception:
-            pass
 
         # 2. Fast Micro-OCR on pagination control
         parser1 = MarketParser(frame1)
         pagination = parser1.parse_pagination()
 
+        # Resilient retry: if initial frame was captured during server network response transition
+        if not pagination:
+            time.sleep(0.35)
+            fresh = self.capture_frame()
+            if fresh:
+                frame1 = fresh
+                parser1 = MarketParser(frame1)
+                pagination = parser1.parse_pagination()
+
+        try:
+            os.makedirs("data", exist_ok=True)
+            frame1.save("data/last_captured_frame.jpg", format="JPEG", quality=85)
+        except Exception:
+            pass
+
         if pagination:
             curr_p, total_p = pagination
             target_pages = min(total_p, effective_max)
-            logger.info(f"Page 1 Micro-OCR: Detected page {curr_p}/{total_p}. Target to collect: {target_pages} pages.")
+            logger.debug(f"Page 1 Micro-OCR: Detected page {curr_p}/{total_p}. Target to collect: {target_pages} pages.")
 
             # Queue Page 1 for background full OCR & DB persistence
             self.ocr_worker.submit(frame1, tab=tab, page_num=1)
 
             if target_pages <= 1:
-                logger.info(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
+                logger.debug(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
                 self.ocr_worker.wait_all()
                 return
 
-            # Rapidly flip and stream pages 2 through target_pages
+            # Rapidly flip and stream pages 2 through target_pages (validated 300ms delay)
             for page_idx in range(2, target_pages + 1):
-                logger.info(f"Flipping to page {page_idx}/{target_pages}...")
                 if self.use_adb and self.adb:
                     self.adb.tap(*self.adb.POS_NEXT_PAGE)
-                    time.sleep(0.4)
+                    time.sleep(0.30)
                 else:
                     next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
                     if not next_pt:
                         logger.warning("Failed to map next page coordinates.")
                         break
                     human_click(next_pt[0], next_pt[1])
-                    human_delay(0.45, 0.55)
+                    human_delay(0.35, 0.45)
 
                 frame = self.capture_frame()
                 if not frame:
@@ -343,7 +381,7 @@ class MarketCollector:
             self.ocr_worker.wait_all()
 
         else:
-            logger.info("Pagination unparsed on Page 1. Running safe fallback loop...")
+            logger.debug("Pagination unparsed on Page 1. Running safe fallback loop...")
             self._fallback_paginate_and_scrape(max_pages=max_pages, is_market=is_market)
 
     def _fallback_paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False):
@@ -360,19 +398,19 @@ class MarketCollector:
             sig = info.get("signature")
 
             if count == 0 and page_idx > 1:
-                logger.info(f"Page {page_idx} is empty. Reached end of listings.")
+                logger.debug(f"Page {page_idx} is empty. Reached end of listings.")
                 break
 
             if last_page_sig is not None and sig is not None and sig == last_page_sig:
-                logger.info(f"Page {page_idx} records are identical to previous page. Reached final page.")
+                logger.debug(f"Page {page_idx} records are identical to previous page. Reached final page.")
                 break
             last_page_sig = sig
 
             if pagination:
                 curr_p, total_p = pagination
-                logger.info(f"Scraped page {curr_p} of {total_p} ({count} items)")
+                logger.debug(f"Scraped page {curr_p} of {total_p} ({count} items)")
                 if curr_p >= total_p:
-                    logger.info(f"Reached final page ({curr_p}/{total_p}). Stopping pagination.")
+                    logger.debug(f"Reached final page ({curr_p}/{total_p}). Stopping pagination.")
                     break
             else:
                 runaway_limit = max_pages if not is_market else 5
@@ -384,15 +422,13 @@ class MarketCollector:
                 break
 
             if self.use_adb and self.adb:
-                logger.info("Clicking next page button via ADB...")
                 self.adb.tap(*self.adb.POS_NEXT_PAGE)
-                time.sleep(0.4)
+                time.sleep(0.30)
             else:
                 next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
                 if next_pt:
-                    logger.info("Clicking next page button...")
                     human_click(next_pt[0], next_pt[1])
-                    human_delay(0.45, 0.55)
+                    human_delay(0.35, 0.45)
                 else:
                     logger.warning("Failed to map next page coordinates.")
                     break
@@ -410,29 +446,47 @@ class MarketCollector:
             return "descending"
         return "none"
 
-    def ensure_price_sort_ascending(self):
+    def ensure_price_sort_ascending(self) -> Optional[Image.Image]:
         """
         Ensures the table is sorted by lowest unit price first (ascending).
+        Returns the confirmed ascending screen frame (or None) for zero-latency reuse in pagination.
         """
         frame = self.capture_frame()
         if not frame:
-            return
+            return None
         direction = self.get_sort_direction(frame)
-        logger.info(f"Current sort direction on table: '{direction}'")
+        logger.debug(f"Current sort direction on table: '{direction}'")
         if direction == "ascending":
-            return
+            return frame
 
-        logger.info("Clicking [每個價錢] header to sort by price...")
+        logger.debug("Clicking [每個價錢] header to sort by price...")
         self.click_ref(*self.POS_PRICE_HEADER)
-        time.sleep(0.8)
 
-        frame = self.capture_frame()
-        direction = self.get_sort_direction(frame)
-        logger.info(f"Sort direction after click 1: '{direction}'")
+        frame = None
+        direction = "none"
+        for _ in range(8):
+            time.sleep(0.15)
+            frame = self.capture_frame()
+            if not frame:
+                continue
+            direction = self.get_sort_direction(frame)
+            if direction != "none":
+                break
+
+        logger.debug(f"Sort direction after click 1: '{direction}'")
         if direction != "ascending":
-            logger.info("Toggling [每個價錢] header to ensure ASCENDING order (lowest price first)...")
+            logger.debug("Toggling [每個價錢] header to ensure ASCENDING order (lowest price first)...")
             self.click_ref(*self.POS_PRICE_HEADER)
-            time.sleep(0.8)
+            for _ in range(8):
+                time.sleep(0.15)
+                frame = self.capture_frame()
+                if not frame:
+                    continue
+                direction = self.get_sort_direction(frame)
+                if direction == "ascending":
+                    break
+
+        return frame
 
     def run_query_collection(self, keyword: str, max_pages: int = 2, target_tab: str = "both"):
         """
@@ -441,7 +495,11 @@ class MarketCollector:
         """
         # Check & auto-rotate instance if allowed and needed
         if self.allow_instance_rotation:
-            active_inst = self.quota_mgr.get_available_instance(required=1)
+            allowed = None
+            if self.use_adb:
+                attached = AdbController.list_attached_devices()
+                allowed = [name for name, dev in INSTANCE_TO_DEVICE.items() if dev in attached]
+            active_inst = self.quota_mgr.get_available_instance(required=1, allowed_instances=allowed)
             if not active_inst:
                 logger.warning("DAILY QUOTA EXHAUSTED across all instances. Pausing until 08:00 AM reset.")
                 return
@@ -455,9 +513,6 @@ class MarketCollector:
                 return
 
         if not self.ensure_focus():
-            return
-        if not self.is_auction_open():
-            logger.error("SAFETY GUARD: Auction House is closed! Halting immediately.")
             return
 
         query_success = False
@@ -478,8 +533,8 @@ class MarketCollector:
             if self.execute_search(keyword, reuse_existing=False):
                 query_success = True
                 self.quota_mgr.record_search(self.current_instance, count=1)
-                self.ensure_price_sort_ascending()
-                self.paginate_and_scrape(max_pages=max_pages, is_market=False)
+                verified_frame = self.ensure_price_sort_ascending()
+                self.paginate_and_scrape(max_pages=max_pages, is_market=False, initial_frame=verified_frame)
 
         # 2. Scrape Matched Trades (市價) if requested
         if target_tab in ("trades", "both"):
@@ -559,6 +614,10 @@ class MarketCollector:
                 human_delay(2.0, 3.0)
 
         logger.info("Catalog collection scan completed.")
+        try:
+            self.leave_auction()
+        except Exception:
+            pass
 
         # Autonomous Tier Evaluation Pass
         try:
@@ -569,8 +628,12 @@ class MarketCollector:
 
     def shutdown(self):
         """
-        Shuts down background OCR workers cleanly.
+        Safely leaves Auction House and shuts down background OCR workers cleanly.
         """
+        try:
+            self.leave_auction()
+        except Exception as e:
+            logger.debug(f"Error leaving auction on shutdown: {e}")
         if hasattr(self, "ocr_worker"):
             self.ocr_worker.shutdown()
 

@@ -121,15 +121,19 @@ Examples:
             return
         target_win_mgr = WindowManager(target_hwnd=selected["hwnd"])
 
+    if args.query:
+        # Single query mode always runs automatic collection
+        collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance, use_adb=args.use_adb, allow_instance_rotation=False)
+        try:
+            collector.run_query_collection(args.query, max_pages=args.pages, target_tab=args.target_tab)
+        finally:
+            collector.shutdown()
+        return
+
     if args.mode == "passive":
         monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
         monitor.start_listener()
     else:
-        # Single query mode always uses a single collector
-        if args.query:
-            collector = MarketCollector(window_mgr=target_win_mgr, instance_name=args.instance, use_adb=args.use_adb)
-            collector.run_query_collection(args.query, max_pages=args.pages, target_tab=args.target_tab)
-            return
 
         watchlist_path = Path(args.watchlist)
         if not watchlist_path.exists():
@@ -155,7 +159,11 @@ Examples:
                 total_count = len(json.load(f))
             print(f"AUTO Mode: Found {len(due_items)} of {total_count} items due to update. Starting collection...")
             scanner = get_scanner()
-            scanner.run_catalog_scan(due_items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
+            try:
+                scanner.run_catalog_scan(due_items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
+            finally:
+                if hasattr(scanner, "shutdown"):
+                    scanner.shutdown()
             print("Round completed.")
             return
 
@@ -176,7 +184,11 @@ Examples:
             items = raw_wl
 
         scanner = get_scanner()
-        scanner.run_catalog_scan(items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
+        try:
+            scanner.run_catalog_scan(items, max_pages=args.pages if hasattr(scanner, 'devices') else args.pages, target_tab=args.target_tab, start_index=args.start_index)
+        finally:
+            if hasattr(scanner, "shutdown"):
+                scanner.shutdown()
 
 
 if __name__ == "__main__":

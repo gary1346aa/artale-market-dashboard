@@ -45,19 +45,19 @@ class AsyncOcrWorker:
                     if tab == "market":
                         sig = tuple((r.item_name, r.matched_unit_price, r.trade_time) for r in records)
                         if self._last_sig is not None and sig and sig == self._last_sig:
-                            logger.info(f"[市價] Page {page_num} duplicate signature detected (unchanged). Skipping save.")
+                            logger.debug(f"[市價] Page {page_num} duplicate signature detected (unchanged). Skipping save.")
                         else:
                             save_matched_trades(records)
-                            logger.info(f"[市價] Async parsed & saved {len(records)} completed trades from page {page_num}.")
+                            logger.debug(f"[市價] Async parsed & saved {len(records)} completed trades from page {page_num}.")
                             if records:
                                 self._last_sig = sig
                     else:
                         sig = tuple((r.item_name, r.unit_price, r.total_price) for r in records)
                         if self._last_sig is not None and sig and sig == self._last_sig:
-                            logger.info(f"[查詢] Page {page_num} duplicate signature detected (unchanged). Skipping save.")
+                            logger.debug(f"[查詢] Page {page_num} duplicate signature detected (unchanged). Skipping save.")
                         else:
                             save_active_listings(records)
-                            logger.info(f"[查詢] Async parsed & saved {len(records)} active listings from page {page_num}.")
+                            logger.debug(f"[查詢] Async parsed & saved {len(records)} active listings from page {page_num}.")
                             if records:
                                 self._last_sig = sig
             except Exception as e:

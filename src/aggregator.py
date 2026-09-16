@@ -84,7 +84,11 @@ class KlineAggregator:
             cursor.execute("""
                 SELECT min(unit_price) FROM active_listings
                 WHERE item_name = ? AND unit_price >= 500
-            """, (item_name,))
+                  AND replace(captured_at, 'T', ' ') >= (
+                      SELECT datetime(replace(max(captured_at), 'T', ' '), '-15 minutes')
+                      FROM active_listings WHERE item_name = ?
+                  )
+            """, (item_name, item_name))
             lowest_ask_row = cursor.fetchone()
             current_lowest_ask = lowest_ask_row[0] if lowest_ask_row and lowest_ask_row[0] else None
 

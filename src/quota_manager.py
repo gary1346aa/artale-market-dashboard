@@ -141,22 +141,26 @@ class QuotaManager:
         data["last_updated"] = datetime.now().isoformat()
         self._save(data)
 
-    def get_available_instance(self, required: int = 1) -> Optional[str]:
+    def get_available_instance(self, required: int = 1, allowed_instances: Optional[List[str]] = None) -> Optional[str]:
         """
         Returns the active instance if it has enough quota.
         Otherwise automatically switches and returns the next instance with available quota.
         Returns None if all instances are exhausted.
         """
         data = self._load()
-        active = data.get("active_instance", self.known_instances[0])
+        candidates = [k for k in self.known_instances if allowed_instances is None or k in allowed_instances]
+        if not candidates:
+            return None
+
+        active = data.get("active_instance", candidates[0])
         
-        # 1. If active instance has enough quota (at least required), keep it
-        if self.can_search(active, required=required):
+        # 1. If active instance is candidate and has enough quota, keep it
+        if active in candidates and self.can_search(active, required=required):
             return active
 
         # 2. Rotate to the next instance that has enough quota
-        for name in self.known_instances:
-            if name != active and self.can_search(name, required=required):
+        for name in candidates:
+            if self.can_search(name, required=required):
                 self.switch_instance(name)
                 return name
 

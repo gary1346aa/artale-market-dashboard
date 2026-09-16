@@ -26,6 +26,7 @@ def extract_number(text: str) -> Optional[int]:
     Extracts the primary integer value from a string with possible punctuation.
     E.g. '85,555 (8萬 5,555)' -> 85555
          '4 , 395 , 000' -> 4395000
+         '1,112,111,111 II Ifg 1,211Æ 1,111)' -> 1112111111
          '(439Æ 5,000)' -> 4395000
          '(870萬)' -> 8700000
     """
@@ -40,44 +41,76 @@ def extract_number(text: str) -> Optional[int]:
         "B": "8",
         "Z": "2", "z": "2"
     })
-    cleaned = text.translate(trans)
+    cleaned = text.translate(trans).strip()
 
-    # Split into lines to strictly isolate the primary price line from the secondary (萬) line
+    # Split into lines
     lines = [l.strip() for l in cleaned.splitlines() if l.strip()]
     if not lines:
         return None
 
-    # 1. Primary pass: Extract all digits from Line 1 before any '('
-    line1 = lines[0].split("(")[0].strip()
-    digits_line1 = re.sub(r"[^\d]", "", line1)
-    if digits_line1:
-        try:
-            val = int(digits_line1)
-            if val > 0:
-                return val
-        except ValueError:
-            pass
+    line1 = lines[0]
 
-    # 2. Secondary pass: If Line 1 had no digits, parse parenthetical / secondary line
+    # Pass 1: Standard comma-separated number at start of line 1 (e.g. '1,112,111,111 ...' or '1 , 399 , 999 , 993 ...')
+    # This strictly prevents bleeding into parenthetical/Chinese unit suffixes when '(' is missed by OCR
+    m_comma = re.match(r"^\s*(\d{1,3}(?:\s*,\s*\d{3})+)", line1)
+    if m_comma:
+        digits = re.sub(r"[^\d]", "", m_comma.group(1))
+        val = int(digits)
+        if 0 < val < 100_000_000_000:
+            return val
+
+    # Pass 2: If line 1 has parenthesis, extract digits before '('
+    if "(" in line1:
+        prefix = line1.split("(")[0].strip()
+        digits_prefix = re.sub(r"[^\d]", "", prefix)
+        if digits_prefix:
+            try:
+                val = int(digits_prefix)
+                if 0 < val < 100_000_000_000:
+                    return val
+            except ValueError:
+                pass
+
+    # Pass 3: Leading integer before any whitespace or paren (e.g. '500', '85555 (8萬...)')
+    m_lead = re.match(r"^\s*(\d+)", line1)
+    if m_lead:
+        val = int(m_lead.group(1))
+        if 0 < val < 100_000_000_000:
+            return val
+
+    # Pass 4: Parenthetical Chinese notation (e.g. '(870萬)' or '(11億 1,211萬 1,111)')
     full_text = " ".join(lines)
     paren_match = re.search(r"\((.*?)\)", full_text)
     content = paren_match.group(1) if paren_match else (lines[1] if len(lines) > 1 else lines[0])
     norm = re.sub(r"[萬万ÆæWw]", "萬", content)
-    if "萬" in norm:
-        parts = norm.split("萬")
-        wan_digits = re.sub(r"[^\d]", "", parts[0])
-        rest_digits = re.sub(r"[^\d]", "", parts[1]) if len(parts) > 1 else ""
-        wan_val = int(wan_digits) if wan_digits else 0
+    norm = re.sub(r"[億亿]", "億", norm)
+    if "億" in norm or "萬" in norm:
+        yi_val = 0
+        wan_val = 0
+        rem = norm
+        if "億" in rem:
+            p = rem.split("億")
+            yi_digits = re.sub(r"[^\d]", "", p[0])
+            yi_val = int(yi_digits) if yi_digits else 0
+            rem = p[1]
+        if "萬" in rem:
+            p = rem.split("萬")
+            wan_digits = re.sub(r"[^\d]", "", p[0])
+            wan_val = int(wan_digits) if wan_digits else 0
+            rem = p[1]
+        rest_digits = re.sub(r"[^\d]", "", rem)
         rest_val = int(rest_digits) if rest_digits else 0
-        val = wan_val * 10000 + rest_val
-        if val > 0:
+        val = yi_val * 100_000_000 + wan_val * 10_000 + rest_val
+        if 0 < val < 100_000_000_000:
             return val
 
-    # 3. Fallback: Any digits on Line 1 only (NEVER join lines)
-    fallback_digits = re.sub(r"[^\d]", "", lines[0])
+    # Pass 5: Fallback: digits on Line 1 only if reasonable size (< 100 billion)
+    fallback_digits = re.sub(r"[^\d]", "", line1)
     if fallback_digits:
         try:
-            return int(fallback_digits)
+            val = int(fallback_digits)
+            if 0 < val < 100_000_000_000:
+                return val
         except ValueError:
             pass
 

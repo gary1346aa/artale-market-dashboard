@@ -170,7 +170,9 @@ class MarketParser:
                 else:
                     continue
 
-            if unit_price is None or unit_price < 500:
+            if unit_price is None or unit_price < 500 or unit_price >= 100_000_000_000:
+                continue
+            if total_price is not None and total_price >= 100_000_000_000:
                 continue
 
             # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
@@ -262,7 +264,9 @@ class MarketParser:
                 else:
                     continue
 
-            if unit_price is None or unit_price < 500:
+            if unit_price is None or unit_price < 500 or unit_price >= 100_000_000_000:
+                continue
+            if total_price is not None and total_price >= 100_000_000_000:
                 continue
 
             # Total price and unit price are separate columns; quantity is strictly total_price / unit_price

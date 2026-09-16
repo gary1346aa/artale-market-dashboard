@@ -25,8 +25,9 @@ class MarketParser:
         (437, 483)
     ]
 
-    def __init__(self, image: Image.Image):
+    def __init__(self, image: Image.Image, item_name: Optional[str] = None):
         self.raw_image = image
+        self.expected_item_name = item_name
         w, h = image.size
         self.scale_x = w / self.REF_WIDTH
         self.scale_y = h / self.REF_HEIGHT
@@ -120,15 +121,18 @@ class MarketParser:
 
         for y1, y2 in self.ROW_BOUNDS:
             # 1. Item Name
-            name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
-            name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
-            raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
-            item_name = normalize_item_name(raw_name)
+            if self.expected_item_name:
+                item_name = self.expected_item_name
+            else:
+                name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
+                name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
+                raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
+                item_name = normalize_item_name(raw_name)
 
-            if not item_name or len(item_name) < 2:
-                continue
+                if not item_name or len(item_name) < 2:
+                    continue
 
-            # 2. Total Price
+            # 2. Total Price (Amount) - Column 2
             tot_box = self._scale_box(550, y1, 675, y2)
             tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
@@ -137,7 +141,7 @@ class MarketParser:
                 tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price
+            # 3. Unit Price - Column 3
             unit_box = self._scale_box(675, y1, 790, y2)
             unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
@@ -146,36 +150,35 @@ class MarketParser:
                 unit_text = ocr_image(unit_crop, lang="zh-Hant-TW")
                 unit_price = extract_number(unit_text)
 
-            # Fallbacks
+            # If both price columns are empty, the row is empty (end of results)
+            if total_price is None and unit_price is None:
+                continue
+
+            # Equipment or single sales show '-' for unit price
             if unit_price is None and total_price is not None:
                 unit_price = total_price
             elif total_price is None and unit_price is not None:
                 total_price = unit_price
 
-            if unit_price is None or unit_price <= 0:
+            # In Artale, minimum auction price is 500 mesos.
+            # If unit_price < 500 (e.g. OCR read '-' as noise), fallback to total_price if valid
+            if unit_price is not None and unit_price < 500:
+                if total_price and total_price >= 500:
+                    unit_price = total_price
+                else:
+                    continue
+
+            if unit_price is None or unit_price < 500:
                 continue
 
-            # In Artale, minimum auction price is 500 mesos.
-            # If unit_price < 500 but total_price >= 500, OCR swapped or misread quantity as unit_price.
-            if unit_price < 500:
-                if total_price and total_price >= 500 and unit_price > 0:
-                    quantity = unit_price
-                    unit_price = round(total_price / quantity)
-                else:
-                    continue  # Invalid listing noise
-
-            quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
+            # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
+            quantity = max(1, min(3000, round(total_price / unit_price))) if (total_price and unit_price) else 1
 
             # Scrolls, equipment, and skill books category guard (single items)
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                 if quantity > 20:
                     unit_price = total_price
                     quantity = 1
-
-            # In Artale, max unit stack limit per auction listing is 3,000
-            if quantity > 3000 or (total_price and total_price > 30_000_000_000):
-                quantity = 1
-                total_price = unit_price
 
             if unit_price < 500:
                 continue
@@ -209,15 +212,18 @@ class MarketParser:
 
         for y1, y2 in self.ROW_BOUNDS:
             # 1. Item Name
-            name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
-            name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
-            raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
-            item_name = normalize_item_name(raw_name)
+            if self.expected_item_name:
+                item_name = self.expected_item_name
+            else:
+                name_box = self._scale_box(335, y1 + 4, 555, y2 - 4)
+                name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
+                raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
+                item_name = normalize_item_name(raw_name)
 
-            if not item_name or len(item_name) < 2:
-                continue
+                if not item_name or len(item_name) < 2:
+                    continue
 
-            # 2. Total Price
+            # 2. Total Price (Amount) - Column 2
             tot_box = self._scale_box(550, y1, 675, y2)
             tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
@@ -226,7 +232,7 @@ class MarketParser:
                 tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price
+            # 3. Unit Price - Column 3
             unit_box = self._scale_box(675, y1, 790, y2)
             unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
@@ -235,39 +241,35 @@ class MarketParser:
                 unit_text = ocr_image(unit_crop, lang="zh-Hant-TW")
                 unit_price = extract_number(unit_text)
 
+            # If both price columns are empty, the row is empty (end of results)
+            if total_price is None and unit_price is None:
+                continue
+
             # Equipment or single sales show '-' for unit price
             if unit_price is None and total_price is not None:
                 unit_price = total_price
             elif total_price is None and unit_price is not None:
                 total_price = unit_price
 
-            if unit_price is None or unit_price <= 0:
-                continue
-
             # In Artale, minimum auction price is 500 mesos.
-            if unit_price < 500:
-                if total_price and total_price >= 500 and unit_price > 0:
-                    quantity = unit_price
-                    unit_price = round(total_price / quantity)
+            # If unit_price < 500 (e.g. OCR read '-' as noise), fallback to total_price if valid
+            if unit_price is not None and unit_price < 500:
+                if total_price and total_price >= 500:
+                    unit_price = total_price
                 else:
-                    continue  # Filter out OCR noise like unit_price = 4
+                    continue
 
-            if unit_price < 500:
+            if unit_price is None or unit_price < 500:
                 continue
 
-            # Quantity estimation with item-category sanity checks
-            quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
+            # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
+            quantity = max(1, min(3000, round(total_price / unit_price))) if (total_price and unit_price) else 1
 
             # Scrolls, equipment, and skill books category guard (single items)
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                 if quantity > 20:
                     unit_price = total_price
                     quantity = 1
-
-            # In Artale, max unit stack limit per auction listing is 3,000
-            if quantity > 3000 or (total_price and total_price > 30_000_000_000):
-                quantity = 1
-                total_price = unit_price
 
             # 4. Matched Time & Trader
             meta_box = self._scale_box(795, y1, 925, y2)

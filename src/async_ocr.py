@@ -22,11 +22,11 @@ class AsyncOcrWorker:
         self._thread = threading.Thread(target=self._worker_loop, daemon=True, name="AsyncOcrWorker")
         self._thread.start()
 
-    def submit(self, frame: Image.Image, tab: str, page_num: int):
+    def submit(self, frame: Image.Image, tab: str, page_num: int, item_name: Optional[str] = None):
         """
         Enqueues a captured frame for background OCR parsing and DB persistence.
         """
-        self._queue.put((frame, tab, page_num))
+        self._queue.put((frame, tab, page_num, item_name))
 
     def _worker_loop(self):
         while True:
@@ -35,9 +35,9 @@ class AsyncOcrWorker:
                 self._queue.task_done()
                 break
 
-            frame, tab, page_num = item
+            frame, tab, page_num, item_name = item
             try:
-                parser = MarketParser(frame)
+                parser = MarketParser(frame, item_name=item_name)
                 res = parser.parse()
                 records = res.get("records", [])
 

@@ -271,7 +271,7 @@ class MarketCollector:
         human_delay(1.0, 1.5)
         return True
 
-    def scrape_current_page(self) -> dict:
+    def scrape_current_page(self, item_name: Optional[str] = None) -> dict:
         """
         Captures the screen, parses the current page, and saves records directly to DB.
         Returns extracted records, tab, pagination, and a page signature for duplicate detection.
@@ -287,7 +287,7 @@ class MarketCollector:
         except Exception:
             pass
 
-        parser = MarketParser(frame)
+        parser = MarketParser(frame, item_name=item_name)
         res = parser.parse()
         tab = res["tab"]
         records = res["records"]
@@ -309,7 +309,7 @@ class MarketCollector:
             "signature": signature if records else None
         }
 
-    def paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, initial_frame: Optional[Image.Image] = None):
+    def paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, initial_frame: Optional[Image.Image] = None, item_name: Optional[str] = None):
         """
         Scrapes current tab across pages using pipelined asynchronous OCR.
         Fast Micro-OCR path: Reads (curr_p, total_p) on Page 1 in ~15ms, then streams
@@ -327,7 +327,7 @@ class MarketCollector:
             return
 
         # 2. Fast Micro-OCR on pagination control
-        parser1 = MarketParser(frame1)
+        parser1 = MarketParser(frame1, item_name=item_name)
         pagination = parser1.parse_pagination()
 
         # Resilient retry: if initial frame was captured during server network response transition
@@ -336,7 +336,7 @@ class MarketCollector:
             fresh = self.capture_frame()
             if fresh:
                 frame1 = fresh
-                parser1 = MarketParser(frame1)
+                parser1 = MarketParser(frame1, item_name=item_name)
                 pagination = parser1.parse_pagination()
 
         try:
@@ -351,7 +351,7 @@ class MarketCollector:
             logger.debug(f"Page 1 Micro-OCR: Detected page {curr_p}/{total_p}. Target to collect: {target_pages} pages.")
 
             # Queue Page 1 for background full OCR & DB persistence
-            self.ocr_worker.submit(frame1, tab=tab, page_num=1)
+            self.ocr_worker.submit(frame1, tab=tab, page_num=1, item_name=item_name)
 
             if target_pages <= 1:
                 logger.debug(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
@@ -376,15 +376,15 @@ class MarketCollector:
                     logger.warning(f"Frame capture returned empty on page {page_idx}.")
                     break
 
-                self.ocr_worker.submit(frame, tab=tab, page_num=page_idx)
+                self.ocr_worker.submit(frame, tab=tab, page_num=page_idx, item_name=item_name)
 
             self.ocr_worker.wait_all()
 
         else:
             logger.debug("Pagination unparsed on Page 1. Running safe fallback loop...")
-            self._fallback_paginate_and_scrape(max_pages=max_pages, is_market=is_market)
+            self._fallback_paginate_and_scrape(max_pages=max_pages, is_market=is_market, item_name=item_name)
 
-    def _fallback_paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False):
+    def _fallback_paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, item_name: Optional[str] = None):
         """
         Synchronous fallback pagination loop when Page 1 pagination indicator cannot be read.
         """
@@ -392,7 +392,7 @@ class MarketCollector:
         last_page_sig = None
 
         for page_idx in range(1, effective_max + 1):
-            info = self.scrape_current_page()
+            info = self.scrape_current_page(item_name=item_name)
             pagination = info.get("pagination")
             count = info.get("count", 0)
             sig = info.get("signature")
@@ -534,7 +534,7 @@ class MarketCollector:
                 query_success = True
                 self.quota_mgr.record_search(self.current_instance, count=1)
                 verified_frame = self.ensure_price_sort_ascending()
-                self.paginate_and_scrape(max_pages=max_pages, is_market=False, initial_frame=verified_frame)
+                self.paginate_and_scrape(max_pages=max_pages, is_market=False, initial_frame=verified_frame, item_name=keyword)
 
         # 2. Scrape Matched Trades (市價) if requested
         if target_tab in ("trades", "both"):
@@ -554,7 +554,7 @@ class MarketCollector:
             if self.execute_search(keyword, reuse_existing=reuse):
                 self.quota_mgr.record_search(self.current_instance, count=1)
                 # Keep default sort (sorted by match date descending) and collect ALL pages
-                self.paginate_and_scrape(max_pages=max_pages, is_market=True)
+                self.paginate_and_scrape(max_pages=max_pages, is_market=True, item_name=keyword)
                 # Auto-generate K-line candles for this item
                 try:
                     self.aggregator.aggregate_item(keyword, timeframe="1h")

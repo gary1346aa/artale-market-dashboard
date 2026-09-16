@@ -166,17 +166,14 @@ class MarketParser:
 
             quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
 
-            # Scrolls, equipment, skill books, tickets, and cash shop items max auction stack guards
+            # Scrolls, equipment, and skill books category guard (single items)
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                 if quantity > 20:
                     unit_price = total_price
                     quantity = 1
-            elif any(k in item_name for k in ["票券", "背包", "護身符", "瞬移", "加持器", "喇叭"]):
-                if quantity > 200:
-                    quantity = 1
-                    total_price = unit_price
 
-            if quantity > 1000 or (total_price and total_price > 30_000_000_000):
+            # In Artale, max unit stack limit per auction listing is 3,000
+            if quantity > 3000 or (total_price and total_price > 30_000_000_000):
                 quantity = 1
                 total_price = unit_price
 
@@ -261,17 +258,14 @@ class MarketParser:
             # Quantity estimation with item-category sanity checks
             quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
 
-            # Scrolls, equipment, skill books, tickets, and cash shop items max auction stack guards
+            # Scrolls, equipment, and skill books category guard (single items)
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                 if quantity > 20:
                     unit_price = total_price
                     quantity = 1
-            elif any(k in item_name for k in ["票券", "背包", "護身符", "瞬移", "加持器", "喇叭"]):
-                if quantity > 200:
-                    quantity = 1
-                    total_price = unit_price
 
-            if quantity > 1000 or (total_price and total_price > 30_000_000_000):
+            # In Artale, max unit stack limit per auction listing is 3,000
+            if quantity > 3000 or (total_price and total_price > 30_000_000_000):
                 quantity = 1
                 total_price = unit_price
 

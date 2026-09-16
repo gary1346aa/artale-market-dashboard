@@ -120,8 +120,8 @@ class MarketParser:
         curr_page = pagination[0] if pagination else 1
 
         for y1, y2 in self.ROW_BOUNDS:
-            # 1. Item Name - Column 1 (x: 350 to 560, avoids icon)
-            name_box = self._scale_box(350, y1 + 4, 560, y2 - 4)
+            # 1. Item Name - Column 1 (x: 365 to 555, clean title without icon border)
+            name_box = self._scale_box(365, y1 + 4, 555, y2 - 4)
             name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
             raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
             item_name = normalize_item_name(raw_name)
@@ -134,8 +134,8 @@ class MarketParser:
             elif not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Amount) - Column 2 (x: 570 to 685, shifted right)
-            tot_box = self._scale_box(570, y1, 685, y2)
+            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, shifted right)
+            tot_box = self._scale_box(580, y1, 688, y2)
             tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
@@ -143,8 +143,8 @@ class MarketParser:
                 tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price - Column 3 (x: 690 to 800, shifted right)
-            unit_box = self._scale_box(690, y1, 800, y2)
+            # 3. Unit Price - Column 3 (x: 705 to 805, shifted right)
+            unit_box = self._scale_box(705, y1, 805, y2)
             unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
@@ -186,8 +186,8 @@ class MarketParser:
             if unit_price < 500:
                 continue
 
-            # 4. Remaining Time (x: 818 to 925, y: y1+6 to y1+33, excludes user ID)
-            meta_box = self._scale_box(818, y1 + 6, 925, y1 + 33)
+            # 4. Remaining Time (x: 822 to 920, y: y1+6 to y1+33, excludes user ID)
+            meta_box = self._scale_box(822, y1 + 6, 920, y1 + 33)
             meta_crop = self.raw_image.crop(meta_box).resize((350, 75), Image.Resampling.LANCZOS)
             meta_text = ocr_image(meta_crop, lang="zh-Hant-TW")
             remaining_time = meta_text.replace("\n", " ").strip() if meta_text else None
@@ -212,8 +212,8 @@ class MarketParser:
         trades: List[MatchedTrade] = []
 
         for y1, y2 in self.ROW_BOUNDS:
-            # 1. Item Name - Column 1 (x: 350 to 560, avoids icon)
-            name_box = self._scale_box(350, y1 + 4, 560, y2 - 4)
+            # 1. Item Name - Column 1 (x: 365 to 555, clean title without icon border)
+            name_box = self._scale_box(365, y1 + 4, 555, y2 - 4)
             name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
             raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
             item_name = normalize_item_name(raw_name)
@@ -226,8 +226,8 @@ class MarketParser:
             elif not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Amount) - Column 2 (x: 570 to 685, shifted right)
-            tot_box = self._scale_box(570, y1, 685, y2)
+            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, shifted right)
+            tot_box = self._scale_box(580, y1, 688, y2)
             tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
@@ -235,8 +235,8 @@ class MarketParser:
                 tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price - Column 3 (x: 690 to 800, shifted right)
-            unit_box = self._scale_box(690, y1, 800, y2)
+            # 3. Unit Price - Column 3 (x: 705 to 805, shifted right)
+            unit_box = self._scale_box(705, y1, 805, y2)
             unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
@@ -275,8 +275,8 @@ class MarketParser:
                     unit_price = total_price
                     quantity = 1
 
-            # 4. Matched Time (x: 818 to 925, y: y1+6 to y1+33, excludes user ID)
-            meta_box = self._scale_box(818, y1 + 6, 925, y1 + 33)
+            # 4. Matched Time (x: 822 to 920, y: y1+6 to y1+33, excludes user ID)
+            meta_box = self._scale_box(822, y1 + 6, 920, y1 + 33)
             meta_crop = self.raw_image.crop(meta_box).resize((350, 75), Image.Resampling.LANCZOS)
             meta_text = ocr_image(meta_crop, lang="en-US")
 

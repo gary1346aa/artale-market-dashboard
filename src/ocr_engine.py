@@ -42,38 +42,42 @@ def extract_number(text: str) -> Optional[int]:
     })
     cleaned = text.translate(trans)
 
-    # 1. Primary pass: Extract all digits before '(' (handles space/comma separated digits e.g. '4 , 395 , 000')
-    cleaned_before_paren = cleaned.split("(")[0].strip() if "(" in cleaned else cleaned.strip()
-    digits_only = re.sub(r"[^\d]", "", cleaned_before_paren)
-    if digits_only:
+    # Split into lines to strictly isolate the primary price line from the secondary (萬) line
+    lines = [l.strip() for l in cleaned.splitlines() if l.strip()]
+    if not lines:
+        return None
+
+    # 1. Primary pass: Extract all digits from Line 1 before any '('
+    line1 = lines[0].split("(")[0].strip()
+    digits_line1 = re.sub(r"[^\d]", "", line1)
+    if digits_line1:
         try:
-            val = int(digits_only)
+            val = int(digits_line1)
             if val > 0:
                 return val
         except ValueError:
             pass
 
-    # 2. Secondary pass: Parse formatted parenthetical if primary failed (e.g. OCR only caught the bottom line)
-    paren_match = re.search(r"\((.*?)\)", cleaned)
-    if paren_match:
-        content = paren_match.group(1)
-        # Normalize '萬' variants (OCR with en-US often sees 'Æ', 'æ', 'ZÆ', 'W', 'w')
-        norm = re.sub(r"[萬万ÆæWw]", "萬", content)
-        if "萬" in norm:
-            parts = norm.split("萬")
-            wan_digits = re.sub(r"[^\d]", "", parts[0])
-            rest_digits = re.sub(r"[^\d]", "", parts[1]) if len(parts) > 1 else ""
-            wan_val = int(wan_digits) if wan_digits else 0
-            rest_val = int(rest_digits) if rest_digits else 0
-            val = wan_val * 10000 + rest_val
-            if val > 0:
-                return val
+    # 2. Secondary pass: If Line 1 had no digits, parse parenthetical / secondary line
+    full_text = " ".join(lines)
+    paren_match = re.search(r"\((.*?)\)", full_text)
+    content = paren_match.group(1) if paren_match else (lines[1] if len(lines) > 1 else lines[0])
+    norm = re.sub(r"[萬万ÆæWw]", "萬", content)
+    if "萬" in norm:
+        parts = norm.split("萬")
+        wan_digits = re.sub(r"[^\d]", "", parts[0])
+        rest_digits = re.sub(r"[^\d]", "", parts[1]) if len(parts) > 1 else ""
+        wan_val = int(wan_digits) if wan_digits else 0
+        rest_val = int(rest_digits) if rest_digits else 0
+        val = wan_val * 10000 + rest_val
+        if val > 0:
+            return val
 
-    # 3. Fallback: Any digits in the entire string
-    digits_fallback = re.sub(r"[^\d]", "", cleaned)
-    if digits_fallback:
+    # 3. Fallback: Any digits on Line 1 only (NEVER join lines)
+    fallback_digits = re.sub(r"[^\d]", "", lines[0])
+    if fallback_digits:
         try:
-            return int(digits_fallback)
+            return int(fallback_digits)
         except ValueError:
             pass
 

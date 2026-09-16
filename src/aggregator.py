@@ -101,6 +101,18 @@ class KlineAggregator:
                 if not unit_price or unit_price < 1000:
                     continue
                 total_price = r[2] or (qty * unit_price)
+                if total_price and total_price > 30_000_000_000:
+                    continue  # Ignore corrupt multi-billion rows
+
+                # Quantity sanity caps
+                if any(k in item_name for k in ["票券", "背包", "卷軸", "護身符", "瞬移", "加持器", "喇叭", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書"]):
+                    if qty > 200:
+                        qty = 1
+                        total_price = unit_price
+                elif qty > 1000:
+                    qty = 1
+                    total_price = unit_price
+
                 raw_time = r[3] or ""
                 cap_time = r[4] or ""
 

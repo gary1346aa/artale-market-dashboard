@@ -166,11 +166,19 @@ class MarketParser:
 
             quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
 
-            # Scrolls, equipment, and skill books category guard
+            # Scrolls, equipment, skill books, tickets, and cash shop items max auction stack guards
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                 if quantity > 20:
                     unit_price = total_price
                     quantity = 1
+            elif any(k in item_name for k in ["票券", "背包", "護身符", "瞬移", "加持器", "喇叭"]):
+                if quantity > 200:
+                    quantity = 1
+                    total_price = unit_price
+
+            if quantity > 1000 or (total_price and total_price > 30_000_000_000):
+                quantity = 1
+                total_price = unit_price
 
             if unit_price < 500:
                 continue
@@ -253,11 +261,19 @@ class MarketParser:
             # Quantity estimation with item-category sanity checks
             quantity = max(1, round(total_price / unit_price)) if (total_price and unit_price) else 1
 
-            # Scrolls, equipment, and skill books never sell in lots > 20. If quantity > 20, unit_price was misread by OCR.
+            # Scrolls, equipment, skill books, tickets, and cash shop items max auction stack guards
             if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
                 if quantity > 20:
                     unit_price = total_price
                     quantity = 1
+            elif any(k in item_name for k in ["票券", "背包", "護身符", "瞬移", "加持器", "喇叭"]):
+                if quantity > 200:
+                    quantity = 1
+                    total_price = unit_price
+
+            if quantity > 1000 or (total_price and total_price > 30_000_000_000):
+                quantity = 1
+                total_price = unit_price
 
             # 4. Matched Time & Trader
             meta_box = self._scale_box(795, y1, 925, y2)

@@ -75,41 +75,55 @@ def init_db():
 def save_active_listings(listings: List[ActiveListing]):
     with get_connection() as conn:
         cursor = conn.cursor()
-        cursor.executemany("""
-            INSERT INTO active_listings (item_name, quantity, total_price, unit_price, remaining_time, seller_id, page_number, captured_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            (
-                l.item_name,
-                l.quantity,
-                l.total_price,
-                l.unit_price,
-                l.remaining_time,
-                l.seller_id,
-                l.page_number,
-                l.captured_at.isoformat()
-            ) for l in listings
-        ])
-        conn.commit()
+        try:
+            cursor.executemany("""
+                INSERT INTO active_listings (item_name, quantity, total_price, unit_price, remaining_time, seller_id, page_number, captured_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                (
+                    l.item_name,
+                    l.quantity,
+                    l.total_price,
+                    l.unit_price,
+                    l.remaining_time,
+                    l.seller_id,
+                    l.page_number,
+                    l.captured_at.isoformat()
+                ) for l in listings
+            ])
+            conn.commit()
+        except Exception as e:
+            import logging
+            log = logging.getLogger("ArtaleCollector")
+            log.error(f"Failed to insert active_listings: {e}")
+            for idx, l in enumerate(listings):
+                log.error(f"  Row {idx}: item='{l.item_name}', qty={l.quantity}, total={l.total_price}, unit={l.unit_price}, page={l.page_number}")
+            raise
 
 def save_matched_trades(trades: List[MatchedTrade]):
     with get_connection() as conn:
         cursor = conn.cursor()
-        for t in trades:
+        for idx, t in enumerate(trades):
             # Deterministic hash to deduplicate overlapping pages
             trade_hash = f"{t.item_name.strip()}_{t.quantity}_{t.matched_unit_price}_{t.trade_time.strip()}"
-            cursor.execute("""
-                INSERT OR IGNORE INTO matched_trades (item_name, quantity, matched_unit_price, total_matched_price, trade_time, trade_hash, captured_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                t.item_name,
-                t.quantity,
-                t.matched_unit_price,
-                t.total_matched_price,
-                t.trade_time,
-                trade_hash,
-                t.captured_at.isoformat()
-            ))
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO matched_trades (item_name, quantity, matched_unit_price, total_matched_price, trade_time, trade_hash, captured_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    t.item_name,
+                    t.quantity,
+                    t.matched_unit_price,
+                    t.total_matched_price,
+                    t.trade_time,
+                    trade_hash,
+                    t.captured_at.isoformat()
+                ))
+            except Exception as e:
+                import logging
+                log = logging.getLogger("ArtaleCollector")
+                log.error(f"Failed to insert matched_trade Row {idx} (item='{t.item_name}', qty={t.quantity}, unit={t.matched_unit_price}, total={t.total_matched_price}, time='{t.trade_time}'): {e}")
+                raise
         conn.commit()
 
 def save_kline_candles(candles: List[dict]):

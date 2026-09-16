@@ -292,14 +292,28 @@ class MarketCollector:
         tab = res["tab"]
         records = res["records"]
 
-        if tab == "market":
-            save_matched_trades(records)
-            logger.debug(f"[市價] Captured {len(records)} completed trades from page.")
-            signature = tuple((r.item_name, r.matched_unit_price, r.trade_time) for r in records)
-        else:
-            save_active_listings(records)
-            logger.debug(f"[查詢] Captured {len(records)} active listings from page.")
-            signature = tuple((r.item_name, r.unit_price, r.total_price) for r in records)
+        try:
+            if tab == "market":
+                save_matched_trades(records)
+                logger.debug(f"[市價] Captured {len(records)} completed trades from page.")
+                signature = tuple((r.item_name, r.matched_unit_price, r.trade_time) for r in records)
+            else:
+                save_active_listings(records)
+                logger.debug(f"[查詢] Captured {len(records)} active listings from page.")
+                signature = tuple((r.item_name, r.unit_price, r.total_price) for r in records)
+        except Exception as e:
+            import datetime
+            err_dir = os.path.join("scratch", "debug_errors")
+            os.makedirs(err_dir, exist_ok=True)
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_name = "".join(c for c in (item_name or "unknown") if c.isalnum() or c in ("-", "_"))
+            err_path = os.path.join(err_dir, f"err_{safe_name}_{tab}_{ts}.png")
+            try:
+                frame.save(err_path)
+                logger.error(f"[Collector] Saved failed frame to: {os.path.abspath(err_path)}")
+            except Exception:
+                pass
+            raise
 
         return {
             "tab": tab,

@@ -61,7 +61,18 @@ class AsyncOcrWorker:
                             if records:
                                 self._last_sig = sig
             except Exception as e:
-                logger.error(f"Error in Async OCR worker on page {page_num}: {e}")
+                import os, datetime
+                err_dir = os.path.join("scratch", "debug_errors")
+                os.makedirs(err_dir, exist_ok=True)
+                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                safe_name = "".join(c for c in (item_name or "unknown") if c.isalnum() or c in ("-", "_"))
+                err_path = os.path.join(err_dir, f"err_{safe_name}_{tab}_p{page_num}_{ts}.png")
+                try:
+                    frame.save(err_path)
+                    logger.error(f"[AsyncOcrWorker] Saved failed frame to: {os.path.abspath(err_path)}")
+                except Exception as save_err:
+                    logger.error(f"[AsyncOcrWorker] Could not save failed frame: {save_err}")
+                logger.error(f"Error in Async OCR worker on page {page_num} for '{item_name}': {e}")
             finally:
                 self._queue.task_done()
 

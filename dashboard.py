@@ -1456,7 +1456,7 @@ def generate_dashboard_html():
             if (val >= 100000000) {
                 return (val / 100000000).toFixed(2) + " 億";
             } else if (val >= 10000) {
-                return (val / 10000).toFixed(0) + " 萬";
+                return (val / 10000).toFixed(1) + " 萬";
             }
             return Number(val).toLocaleString();
         }
@@ -1466,7 +1466,7 @@ def generate_dashboard_html():
             if (val >= 100000000) {
                 return (val / 100000000).toFixed(2) + " 億";
             } else if (val >= 10000) {
-                return (val / 10000).toFixed(0) + " 萬";
+                return (val / 10000).toFixed(1) + " 萬";
             }
             return Number(val).toLocaleString();
         }
@@ -1927,7 +1927,7 @@ def generate_dashboard_html():
                     if (price >= 100000000) {
                         return (price / 100000000).toFixed(2) + ' 億';
                     } else if (price >= 10000) {
-                        return (price / 10000).toFixed(0) + ' 萬';
+                        return (price / 10000).toFixed(1) + ' 萬';
                     }
                     return price.toLocaleString();
                 }

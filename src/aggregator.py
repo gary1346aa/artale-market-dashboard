@@ -126,6 +126,24 @@ class KlineAggregator:
             all_prices = sorted([t["unit_price"] for t in parsed_trades if t["unit_price"] >= 10000])
             global_med = all_prices[len(all_prices) // 2] if all_prices else 0
 
+            # 1. Pre-pass bundle normalizer against global baseline / lowest ask
+            # Multi-pack sales (e.g. 2x, 3x, 4x, 5x, 10x backpacks or scrolls) where unit price OCR was missed
+            ref_med = current_lowest_ask if (current_lowest_ask and global_med == 0) else global_med
+            if ref_med > 100000:
+                for t in parsed_trades:
+                    up = t["unit_price"]
+                    if up > ref_med * 1.35:
+                        ratio = round(up / ref_med)
+                        if 2 <= ratio <= 20:
+                            norm_p = round(up / ratio)
+                            if 0.65 * ref_med <= norm_p <= 1.35 * ref_med:
+                                t["unit_price"] = norm_p
+                                t["quantity"] = max(t["quantity"], ratio)
+
+            # Recompute baseline after pre-pass normalization
+            norm_prices = sorted([t["unit_price"] for t in parsed_trades if t["unit_price"] >= 10000])
+            norm_med = norm_prices[len(norm_prices) // 2] if norm_prices else global_med
+
             # Bucket trades with Rolling Local Median outlier filter
             buckets: Dict[str, List[Dict]] = {}
             total_trades = len(parsed_trades)
@@ -142,11 +160,16 @@ class KlineAggregator:
                         for j in range(max(0, i - 5), min(total_trades, i + 6))
                         if j != i and parsed_trades[j]["unit_price"] >= 10000
                     ]
-                    median_p = sorted(win)[len(win) // 2] if len(win) >= 3 else global_med
+                    win_med = sorted(win)[len(win) // 2] if len(win) >= 3 else norm_med
+                    # Anchor guard: If local rolling median diverges significantly from overall baseline, anchor to norm_med
+                    if norm_med > 100000 and (win_med > 1.40 * norm_med or win_med < 0.70 * norm_med):
+                        median_p = norm_med
+                    else:
+                        median_p = win_med
                     low_threshold = 0.80
                     high_threshold = 1.30
                 else:
-                    median_p = global_med
+                    median_p = norm_med
                     low_threshold = 0.60
                     high_threshold = 1.60
 

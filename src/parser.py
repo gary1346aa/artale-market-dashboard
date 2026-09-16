@@ -133,12 +133,18 @@ class MarketParser:
             tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
+            if total_price is None:
+                tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
+                total_price = extract_number(tot_text)
 
             # 3. Unit Price
             unit_box = self._scale_box(675, y1, 790, y2)
             unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
+            if unit_price is None:
+                unit_text = ocr_image(unit_crop, lang="zh-Hant-TW")
+                unit_price = extract_number(unit_text)
 
             # Fallbacks
             if unit_price is None and total_price is not None:
@@ -211,12 +217,18 @@ class MarketParser:
             tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
+            if total_price is None:
+                tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
+                total_price = extract_number(tot_text)
 
             # 3. Unit Price
             unit_box = self._scale_box(675, y1, 790, y2)
             unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
+            if unit_price is None:
+                unit_text = ocr_image(unit_crop, lang="zh-Hant-TW")
+                unit_price = extract_number(unit_text)
 
             # Equipment or single sales show '-' for unit price
             if unit_price is None and total_price is not None:
@@ -225,6 +237,17 @@ class MarketParser:
                 total_price = unit_price
 
             if unit_price is None or unit_price <= 0:
+                continue
+
+            # In Artale, minimum auction price is 500 mesos.
+            if unit_price < 500:
+                if total_price and total_price >= 500 and unit_price > 0:
+                    quantity = unit_price
+                    unit_price = round(total_price / quantity)
+                else:
+                    continue  # Filter out OCR noise like unit_price = 4
+
+            if unit_price < 500:
                 continue
 
             # Quantity estimation with item-category sanity checks

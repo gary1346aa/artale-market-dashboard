@@ -25,11 +25,13 @@ def extract_number(text: str) -> Optional[int]:
     """
     Extracts the primary integer value from a string with possible punctuation.
     E.g. '85,555 (8萬 5,555)' -> 85555
+         '4 , 395 , 000' -> 4395000
+         '(439Æ 5,000)' -> 4395000
+         '(870萬)' -> 8700000
     """
     if not text or not text.strip():
         return None
-    # Strip everything starting from '('
-    cleaned = text.split("(")[0].strip()
+
     # Replace common OCR misreads of digits
     trans = str.maketrans({
         "S": "5", "s": "5",
@@ -38,16 +40,43 @@ def extract_number(text: str) -> Optional[int]:
         "B": "8",
         "Z": "2", "z": "2"
     })
-    cleaned = cleaned.translate(trans)
-    tokens = cleaned.split()
-    if not tokens:
-        return None
-    digits_only = re.sub(r"[^\d]", "", tokens[0])
+    cleaned = text.translate(trans)
+
+    # 1. Primary pass: Extract all digits before '(' (handles space/comma separated digits e.g. '4 , 395 , 000')
+    cleaned_before_paren = cleaned.split("(")[0].strip() if "(" in cleaned else cleaned.strip()
+    digits_only = re.sub(r"[^\d]", "", cleaned_before_paren)
     if digits_only:
         try:
-            return int(digits_only)
+            val = int(digits_only)
+            if val > 0:
+                return val
         except ValueError:
-            return None
+            pass
+
+    # 2. Secondary pass: Parse formatted parenthetical if primary failed (e.g. OCR only caught the bottom line)
+    paren_match = re.search(r"\((.*?)\)", cleaned)
+    if paren_match:
+        content = paren_match.group(1)
+        # Normalize '萬' variants (OCR with en-US often sees 'Æ', 'æ', 'ZÆ', 'W', 'w')
+        norm = re.sub(r"[萬万ÆæWw]", "萬", content)
+        if "萬" in norm:
+            parts = norm.split("萬")
+            wan_digits = re.sub(r"[^\d]", "", parts[0])
+            rest_digits = re.sub(r"[^\d]", "", parts[1]) if len(parts) > 1 else ""
+            wan_val = int(wan_digits) if wan_digits else 0
+            rest_val = int(rest_digits) if rest_digits else 0
+            val = wan_val * 10000 + rest_val
+            if val > 0:
+                return val
+
+    # 3. Fallback: Any digits in the entire string
+    digits_fallback = re.sub(r"[^\d]", "", cleaned)
+    if digits_fallback:
+        try:
+            return int(digits_fallback)
+        except ValueError:
+            pass
+
     return None
 
 import difflib

@@ -50,13 +50,15 @@ def extract_number(text: str) -> Optional[int]:
 
     line1 = lines[0]
 
+    MAX_CEILING = 30_000_000_000
+
     # Pass 1: Standard comma-separated number at start of line 1 (e.g. '1,112,111,111 ...' or '1 , 399 , 999 , 993 ...')
     # This strictly prevents bleeding into parenthetical/Chinese unit suffixes when '(' is missed by OCR
     m_comma = re.match(r"^\s*(\d{1,3}(?:\s*,\s*\d{3})+)", line1)
     if m_comma:
         digits = re.sub(r"[^\d]", "", m_comma.group(1))
         val = int(digits)
-        if 0 < val < 100_000_000_000:
+        if 0 < val <= MAX_CEILING:
             return val
 
     # Pass 2: If line 1 has parenthesis, extract digits before '('
@@ -66,7 +68,7 @@ def extract_number(text: str) -> Optional[int]:
         if digits_prefix:
             try:
                 val = int(digits_prefix)
-                if 0 < val < 100_000_000_000:
+                if 0 < val <= MAX_CEILING:
                     return val
             except ValueError:
                 pass
@@ -75,7 +77,7 @@ def extract_number(text: str) -> Optional[int]:
     m_lead = re.match(r"^\s*(\d+)", line1)
     if m_lead:
         val = int(m_lead.group(1))
-        if 0 < val < 100_000_000_000:
+        if 0 < val <= MAX_CEILING:
             return val
 
     # Pass 4: Parenthetical Chinese notation (e.g. '(870萬)' or '(11億 1,211萬 1,111)')
@@ -101,15 +103,15 @@ def extract_number(text: str) -> Optional[int]:
         rest_digits = re.sub(r"[^\d]", "", rem)
         rest_val = int(rest_digits) if rest_digits else 0
         val = yi_val * 100_000_000 + wan_val * 10_000 + rest_val
-        if 0 < val < 100_000_000_000:
+        if 0 < val <= MAX_CEILING:
             return val
 
-    # Pass 5: Fallback: digits on Line 1 only if reasonable size (< 100 billion)
+    # Pass 5: Fallback: digits on Line 1 only if reasonable size (<= 30 billion)
     fallback_digits = re.sub(r"[^\d]", "", line1)
     if fallback_digits:
         try:
             val = int(fallback_digits)
-            if 0 < val < 100_000_000_000:
+            if 0 < val <= MAX_CEILING:
                 return val
         except ValueError:
             pass

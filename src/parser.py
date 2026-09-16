@@ -134,18 +134,18 @@ class MarketParser:
             elif not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, shifted right)
-            tot_box = self._scale_box(580, y1, 688, y2)
-            tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
+            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, top line only y1..y1+26, cuts out Chinese unit below)
+            tot_box = self._scale_box(580, y1, 688, y1 + 26)
+            tot_crop = self.raw_image.crop(tot_box).resize((350, 70), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
             if total_price is None:
                 tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price - Column 3 (x: 705 to 805, shifted right)
-            unit_box = self._scale_box(705, y1, 805, y2)
-            unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
+            # 3. Unit Price - Column 3 (x: 705 to 805, top line only y1..y1+26, cuts out Chinese unit below)
+            unit_box = self._scale_box(705, y1, 805, y1 + 26)
+            unit_crop = self.raw_image.crop(unit_box).resize((350, 70), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
             if unit_price is None:
@@ -170,9 +170,9 @@ class MarketParser:
                 else:
                     continue
 
-            if unit_price is None or unit_price < 500 or unit_price >= 100_000_000_000:
+            if unit_price is None or unit_price < 500 or unit_price > 30_000_000_000:
                 continue
-            if total_price is not None and total_price >= 100_000_000_000:
+            if total_price is not None and total_price > 30_000_000_000:
                 continue
 
             # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
@@ -228,18 +228,18 @@ class MarketParser:
             elif not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, shifted right)
-            tot_box = self._scale_box(580, y1, 688, y2)
-            tot_crop = self.raw_image.crop(tot_box).resize((350, 100), Image.Resampling.LANCZOS)
+            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, top line only y1..y1+26, cuts out Chinese unit below)
+            tot_box = self._scale_box(580, y1, 688, y1 + 26)
+            tot_crop = self.raw_image.crop(tot_box).resize((350, 70), Image.Resampling.LANCZOS)
             tot_text = ocr_image(tot_crop, lang="en-US")
             total_price = extract_number(tot_text)
             if total_price is None:
                 tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price - Column 3 (x: 705 to 805, shifted right)
-            unit_box = self._scale_box(705, y1, 805, y2)
-            unit_crop = self.raw_image.crop(unit_box).resize((350, 100), Image.Resampling.LANCZOS)
+            # 3. Unit Price - Column 3 (x: 705 to 805, top line only y1..y1+26, cuts out Chinese unit below)
+            unit_box = self._scale_box(705, y1, 805, y1 + 26)
+            unit_crop = self.raw_image.crop(unit_box).resize((350, 70), Image.Resampling.LANCZOS)
             unit_text = ocr_image(unit_crop, lang="en-US")
             unit_price = extract_number(unit_text)
             if unit_price is None:
@@ -264,9 +264,9 @@ class MarketParser:
                 else:
                     continue
 
-            if unit_price is None or unit_price < 500 or unit_price >= 100_000_000_000:
+            if unit_price is None or unit_price < 500 or unit_price > 30_000_000_000:
                 continue
-            if total_price is not None and total_price >= 100_000_000_000:
+            if total_price is not None and total_price > 30_000_000_000:
                 continue
 
             # Total price and unit price are separate columns; quantity is strictly total_price / unit_price

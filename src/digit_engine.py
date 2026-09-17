@@ -1752,24 +1752,31 @@ def match_glyph(crop: Image.Image) -> str:
     if (b, gw) in EXACT_GLYPHS:
         return EXACT_GLYPHS[(b, gw)]
 
-    # 2. Bitwise Hamming fallback
+    # 2. Bitwise 2D Shift-Invariant Hamming fallback (dx in -1, 0, 1; dy in -1, 0, 1)
     best_d = '0'
     min_dist = 999
     for d, tb, tw in ALL_PROTOTYPES:
         if abs(tw - gw) > 2:
             continue
-        for dx in (-1, 0, 1):
-            if dx > 0:
-                dist = sum((r1 ^ (r2 << dx)).bit_count() for r1, r2 in zip(b, tb))
-            elif dx < 0:
-                dist = sum((r1 ^ (r2 >> (-dx))).bit_count() for r1, r2 in zip(b, tb))
+        for dy in (-1, 0, 1):
+            if dy == 1:
+                shifted_b = (0,) + b[:9]
+            elif dy == -1:
+                shifted_b = b[1:] + (0,)
             else:
-                dist = sum((r1 ^ r2).bit_count() for r1, r2 in zip(b, tb))
-            if dist < min_dist:
-                min_dist = dist
-                best_d = d
-                if min_dist == 0:
-                    return best_d
+                shifted_b = b
+            for dx in (-1, 0, 1):
+                if dx > 0:
+                    dist = sum((r1 ^ (r2 << dx)).bit_count() for r1, r2 in zip(shifted_b, tb))
+                elif dx < 0:
+                    dist = sum((r1 ^ (r2 >> (-dx))).bit_count() for r1, r2 in zip(shifted_b, tb))
+                else:
+                    dist = sum((r1 ^ r2).bit_count() for r1, r2 in zip(shifted_b, tb))
+                if dist < min_dist:
+                    min_dist = dist
+                    best_d = d
+                    if min_dist == 0:
+                        return best_d
 
     return best_d
 

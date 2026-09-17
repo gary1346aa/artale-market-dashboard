@@ -1,9 +1,12 @@
 import re
-from datetime import datetime
+from pathlib import Path
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple, Dict, Any
 from PIL import Image
 from .models import ActiveListing, MatchedTrade, SearchQuota
 from .ocr_engine import preprocess_for_ocr, ocr_image, extract_number, normalize_item_name
+
+UNPROCESSED_CROPS_DIR = Path(__file__).resolve().parent.parent / "data" / "unprocessed_crops"
 
 class MarketParser:
     """
@@ -39,6 +42,16 @@ class MarketParser:
             int(x2 * self.scale_x),
             int(y2 * self.scale_y)
         )
+
+    def _save_failed_crop(self, crop_image: Image.Image, reason: str, row_idx: int, item_name: str = ""):
+        try:
+            UNPROCESSED_CROPS_DIR.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            safe_name = re.sub(r'[^\w\-_\.]', '_', item_name) if item_name else "unknown"
+            filename = f"failed_row_{ts}_{safe_name}_r{row_idx}_{reason}.png"
+            crop_image.save(UNPROCESSED_CROPS_DIR / filename)
+        except Exception:
+            pass
 
     def detect_active_tab(self) -> str:
         """
@@ -119,7 +132,7 @@ class MarketParser:
         pagination = self.parse_pagination()
         curr_page = pagination[0] if pagination else 1
 
-        for y1, y2 in self.ROW_BOUNDS:
+        for row_idx, (y1, y2) in enumerate(self.ROW_BOUNDS):
             # 1. Item Name - Column 1 (x: 365 to 555, clean title without icon border)
             name_box = self._scale_box(365, y1 + 4, 555, y2 - 4)
             name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
@@ -156,36 +169,34 @@ class MarketParser:
             if total_price is None and unit_price is None:
                 continue
 
+            row_box = self._scale_box(365, y1, 920, y2)
+            row_crop = self.raw_image.crop(row_box)
+
             # Equipment or single sales show '-' for unit price
             if unit_price is None and total_price is not None:
-                unit_price = total_price
-            elif total_price is None and unit_price is not None:
-                total_price = unit_price
-
-            # In Artale, minimum auction price is 500 mesos.
-            # If unit_price < 500 (e.g. OCR read '-' as noise), fallback to total_price if valid
-            if unit_price is not None and unit_price < 500:
-                if total_price and total_price >= 500:
-                    unit_price = total_price
-                else:
-                    continue
-
-            if unit_price is None or unit_price < 500 or unit_price > 30_000_000_000:
-                continue
-            if total_price is not None and total_price > 30_000_000_000:
-                continue
-
-            # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
-            # In Artale, maximum stack/bundle quantity limit in auction house is 9,900
-            quantity = max(1, min(9900, round(total_price / unit_price))) if (total_price and unit_price) else 1
-
-            # Scrolls, equipment, and skill books category guard (single items)
-            if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
-                if quantity > 20:
+                if 500 <= total_price <= 30_000_000_000:
                     unit_price = total_price
                     quantity = 1
-
-            if unit_price < 500:
+                else:
+                    self._save_failed_crop(row_crop, "price_out_of_bounds", row_idx, item_name)
+                    continue
+            elif total_price is not None and unit_price is not None:
+                if unit_price < 500 or unit_price > 30_000_000_000 or total_price < 500 or total_price > 30_000_000_000:
+                    self._save_failed_crop(row_crop, "price_out_of_bounds", row_idx, item_name)
+                    continue
+                if total_price < unit_price:
+                    self._save_failed_crop(row_crop, "total_less_than_unit", row_idx, item_name)
+                    continue
+                # Mathematical exact integer division (zero error)
+                if total_price % unit_price != 0:
+                    self._save_failed_crop(row_crop, "not_divisible", row_idx, item_name)
+                    continue
+                quantity = total_price // unit_price
+                if quantity < 1 or quantity > 9900:
+                    self._save_failed_crop(row_crop, f"qty_out_of_bounds_{quantity}", row_idx, item_name)
+                    continue
+            else:
+                self._save_failed_crop(row_crop, "missing_total_price", row_idx, item_name)
                 continue
 
             # 4. Remaining Time (x: 822 to 920, y: y1+6 to y1+33, excludes user ID)
@@ -213,7 +224,7 @@ class MarketParser:
         """
         trades: List[MatchedTrade] = []
 
-        for y1, y2 in self.ROW_BOUNDS:
+        for row_idx, (y1, y2) in enumerate(self.ROW_BOUNDS):
             # 1. Item Name - Column 1 (x: 365 to 555, clean title without icon border)
             name_box = self._scale_box(365, y1 + 4, 555, y2 - 4)
             name_crop = self.raw_image.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
@@ -250,47 +261,64 @@ class MarketParser:
             if total_price is None and unit_price is None:
                 continue
 
+            row_box = self._scale_box(365, y1, 920, y2)
+            row_crop = self.raw_image.crop(row_box)
+
             # Equipment or single sales show '-' for unit price
             if unit_price is None and total_price is not None:
-                unit_price = total_price
-            elif total_price is None and unit_price is not None:
-                total_price = unit_price
-
-            # In Artale, minimum auction price is 500 mesos.
-            # If unit_price < 500 (e.g. OCR read '-' as noise), fallback to total_price if valid
-            if unit_price is not None and unit_price < 500:
-                if total_price and total_price >= 500:
-                    unit_price = total_price
-                else:
-                    continue
-
-            if unit_price is None or unit_price < 500 or unit_price > 30_000_000_000:
-                continue
-            if total_price is not None and total_price > 30_000_000_000:
-                continue
-
-            # Total price and unit price are separate columns; quantity is strictly total_price / unit_price
-            # In Artale, maximum stack/bundle quantity limit in auction house is 9,900
-            quantity = max(1, min(9900, round(total_price / unit_price))) if (total_price and unit_price) else 1
-
-            # Scrolls, equipment, and skill books category guard (single items)
-            if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
-                if quantity > 20:
+                if 500 <= total_price <= 30_000_000_000:
                     unit_price = total_price
                     quantity = 1
+                else:
+                    self._save_failed_crop(row_crop, "price_out_of_bounds", row_idx, item_name)
+                    continue
+            elif total_price is not None and unit_price is not None:
+                if unit_price < 500 or unit_price > 30_000_000_000 or total_price < 500 or total_price > 30_000_000_000:
+                    self._save_failed_crop(row_crop, "price_out_of_bounds", row_idx, item_name)
+                    continue
+                if total_price < unit_price:
+                    self._save_failed_crop(row_crop, "total_less_than_unit", row_idx, item_name)
+                    continue
+                # Mathematical exact integer division (zero error)
+                if total_price % unit_price != 0:
+                    self._save_failed_crop(row_crop, "not_divisible", row_idx, item_name)
+                    continue
+                quantity = total_price // unit_price
+                if quantity < 1 or quantity > 9900:
+                    self._save_failed_crop(row_crop, f"qty_out_of_bounds_{quantity}", row_idx, item_name)
+                    continue
+            else:
+                self._save_failed_crop(row_crop, "missing_total_price", row_idx, item_name)
+                continue
 
             # 4. Matched Time (x: 822 to 920, y: y1+6 to y1+33, excludes user ID)
             meta_box = self._scale_box(822, y1 + 6, 920, y1 + 33)
             meta_crop = self.raw_image.crop(meta_box).resize((350, 75), Image.Resampling.LANCZOS)
             meta_text = ocr_image(meta_crop, lang="en-US")
 
-            # Extract date time
-            time_match = re.search(r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})", meta_text)
+            # Extract date time skipping whatever dots, dashes, slashes, or whitespace
+            time_match = re.search(
+                r"(?P<year>202\d|2\d)\D+(?P<month>0?[1-9]|1[0-2])\D+(?P<day>0?[1-9]|[12]\d|3[01])\D+(?P<hour>[01]?\d|2[0-3])\D+(?P<minute>[0-5]\d)",
+                meta_text
+            )
             if time_match:
-                trade_time = time_match.group(1)
+                d = time_match.groupdict()
+                y = '20' + d['year'] if len(d['year']) == 2 else d['year']
+                trade_time = f"{y}-{int(d['month']):02d}-{int(d['day']):02d} {int(d['hour']):02d}:{int(d['minute']):02d}"
             else:
-                short_time = re.search(r"(\d{2}:\d{2})", meta_text)
-                trade_time = f"{datetime.now().strftime('%Y-%m-%d')} {short_time.group(1)}" if short_time else None
+                short_match = re.search(r"(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)", meta_text)
+                if short_match:
+                    h = int(short_match.group("hour"))
+                    mi = int(short_match.group("minute"))
+                    now = datetime.now()
+                    # If parsed time is ahead of current time, it MUST have occurred yesterday
+                    if (h, mi) > (now.hour, now.minute):
+                        trade_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+                    else:
+                        trade_date = now.strftime("%Y-%m-%d")
+                    trade_time = f"{trade_date} {h:02d}:{mi:02d}"
+                else:
+                    trade_time = None
 
             trades.append(MatchedTrade(
                 item_name=item_name,

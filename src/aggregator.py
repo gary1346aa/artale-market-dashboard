@@ -98,20 +98,9 @@ class KlineAggregator:
             for r in rows:
                 qty = r[0]
                 unit_price = r[1]
-                if not unit_price or unit_price < 1000:
+                if not unit_price or unit_price < 500:
                     continue
                 total_price = r[2] or (qty * unit_price)
-                if total_price and total_price > 30_000_000_000:
-                    continue  # Ignore corrupt multi-billion rows
-
-                # Quantity sanity caps: scrolls/equipment max 20, all stackable items max 9,900 in Artale
-                if any(k in item_name for k in ["卷軸", "頭盔", "臉部", "眼部", "墜飾", "耳環", "戒指", "技能書", "楓葉祝福", "挑釁"]):
-                    if qty > 20:
-                        qty = 1
-                        total_price = unit_price
-                elif qty > 9900:
-                    qty = 1
-                    total_price = unit_price
 
                 raw_time = r[3] or ""
                 cap_time = r[4] or ""
@@ -134,29 +123,11 @@ class KlineAggregator:
 
             parsed_trades.sort(key=lambda x: x["dt"])
 
-            # Global median baseline
-            all_prices = sorted([t["unit_price"] for t in parsed_trades if t["unit_price"] >= 10000])
+            # Calculate baseline median unit price across all prices >= 500 (official game floor)
+            all_prices = sorted([t["unit_price"] for t in parsed_trades if t["unit_price"] >= 500])
             global_med = all_prices[len(all_prices) // 2] if all_prices else 0
 
-            # 1. Pre-pass bundle normalizer against global baseline / lowest ask
-            # Multi-pack sales (e.g. 2x, 3x, 4x, 5x, 10x backpacks or scrolls) where unit price OCR was missed
-            ref_med = current_lowest_ask if (current_lowest_ask and global_med == 0) else global_med
-            if ref_med > 100000:
-                for t in parsed_trades:
-                    up = t["unit_price"]
-                    if up > ref_med * 1.35:
-                        ratio = round(up / ref_med)
-                        if 2 <= ratio <= 20:
-                            norm_p = round(up / ratio)
-                            if 0.65 * ref_med <= norm_p <= 1.35 * ref_med:
-                                t["unit_price"] = norm_p
-                                t["quantity"] = max(t["quantity"], ratio)
-
-            # Recompute baseline after pre-pass normalization
-            norm_prices = sorted([t["unit_price"] for t in parsed_trades if t["unit_price"] >= 10000])
-            norm_med = norm_prices[len(norm_prices) // 2] if norm_prices else global_med
-
-            # Bucket trades with Rolling Local Median outlier filter
+            # Bucket trades with Adaptive Local / Global Outlier Filter
             buckets: Dict[str, List[Dict]] = {}
             total_trades = len(parsed_trades)
 
@@ -165,54 +136,38 @@ class KlineAggregator:
                 qty = t["quantity"]
                 trade_dt = t["dt"]
 
-                # Determine reference median (rolling window of 11 trades centered at i)
+                # Determine local rolling median if trade count is sufficient
                 if total_trades >= 5:
                     win = [
                         parsed_trades[j]["unit_price"]
                         for j in range(max(0, i - 5), min(total_trades, i + 6))
-                        if j != i and parsed_trades[j]["unit_price"] >= 10000
+                        if j != i and parsed_trades[j]["unit_price"] >= 500
                     ]
-                    win_med = sorted(win)[len(win) // 2] if len(win) >= 3 else norm_med
-                    # Anchor guard: If local rolling median diverges significantly from overall baseline, anchor to norm_med
-                    if norm_med > 100000 and (win_med > 1.40 * norm_med or win_med < 0.70 * norm_med):
-                        median_p = norm_med
+                    win_med = sorted(win)[len(win) // 2] if len(win) >= 3 else global_med
+                    # Anchor guard: If local rolling median diverges wildly from overall baseline, anchor to global_med
+                    if global_med >= 500 and (win_med > 1.50 * global_med or win_med < 0.65 * global_med):
+                        median_p = global_med
                     else:
                         median_p = win_med
-                    low_threshold = 0.80
-                    high_threshold = 1.30
+                    low_threshold = 0.65
+                    high_threshold = 1.50
                 else:
-                    median_p = norm_med
-                    low_threshold = 0.60
-                    high_threshold = 1.60
+                    median_p = global_med
+                    low_threshold = 0.50
+                    high_threshold = 1.80
 
-                # 1. Low outlier filter (RMT token meso, cash-settled trades, dump spikes)
-                if median_p > 100000 and unit_price < median_p * low_threshold:
+                # 1. Low outlier filter (catches comma truncation where 638M -> 638 or 14M -> 14k, and token dumps)
+                if median_p >= 500 and unit_price < median_p * low_threshold:
                     continue
 
-                # 2. High outlier filter & Multi-pack Bundle normalizer
-                if median_p > 100000 and unit_price > median_p * high_threshold:
-                    ratio = round(unit_price / median_p)
-                    if 2 <= ratio <= 15:
-                        norm_p = round(unit_price / ratio)
-                        if (low_threshold * median_p) <= norm_p <= (high_threshold * median_p):
-                            # Legitimate multi-pack bundle: normalize unit price and scale volume
-                            unit_price = norm_p
-                            qty = max(qty, ratio)
-                        else:
-                            continue
-                    else:
-                        continue
+                # 2. High outlier filter (catches Chinese digit concatenation, e.g. 230k -> 2.3B)
+                if median_p >= 500 and unit_price > median_p * high_threshold:
+                    continue
 
                 bucket_key = self.get_bucket_timestamp(trade_dt, timeframe)
                 if bucket_key not in buckets:
                     buckets[bucket_key] = []
-
-                buckets[bucket_key].append({
-                    "dt": trade_dt,
-                    "unit_price": unit_price,
-                    "quantity": qty,
-                    "total_price": t["total_price"]
-                })
+                buckets[bucket_key].append(t)
 
             candles = []
             for b_time in sorted(buckets.keys()):

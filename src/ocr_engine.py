@@ -33,84 +33,35 @@ def extract_number(text: str) -> Optional[int]:
     if not text or not text.strip():
         return None
 
+    MAX_CEILING = 30_000_000_000
+
     # Replace common OCR misreads of digits
     trans = str.maketrans({
+        "O": "0", "o": "0", "D": "0",
         "S": "5", "s": "5",
-        "O": "0", "o": "0",
         "l": "1", "I": "1",
         "B": "8",
         "Z": "2", "z": "2"
     })
     cleaned = text.translate(trans).strip()
 
-    # Split into lines
+    # Split into lines (primary price is strictly on line 1)
     lines = [l.strip() for l in cleaned.splitlines() if l.strip()]
     if not lines:
         return None
 
     line1 = lines[0]
 
-    MAX_CEILING = 30_000_000_000
+    # If any opening parenthesis or Chinese unit exists, cut it off
+    for sep in ["(", "（", "[", "【", "億", "亿", "萬", "万"]:
+        if sep in line1:
+            line1 = line1.split(sep)[0].strip()
 
-    # Pass 1: Standard comma-separated number at start of line 1 (e.g. '1,112,111,111 ...' or '1 , 399 , 999 , 993 ...')
-    # This strictly prevents bleeding into parenthetical/Chinese unit suffixes when '(' is missed by OCR
-    m_comma = re.match(r"^\s*(\d{1,3}(?:\s*,\s*\d{3})+)", line1)
-    if m_comma:
-        digits = re.sub(r"[^\d]", "", m_comma.group(1))
-        val = int(digits)
-        if 0 < val <= MAX_CEILING:
-            return val
-
-    # Pass 2: If line 1 has parenthesis, extract digits before '('
-    if "(" in line1:
-        prefix = line1.split("(")[0].strip()
-        digits_prefix = re.sub(r"[^\d]", "", prefix)
-        if digits_prefix:
-            try:
-                val = int(digits_prefix)
-                if 0 < val <= MAX_CEILING:
-                    return val
-            except ValueError:
-                pass
-
-    # Pass 3: Leading integer before any whitespace or paren (e.g. '500', '85555 (8萬...)')
-    m_lead = re.match(r"^\s*(\d+)", line1)
-    if m_lead:
-        val = int(m_lead.group(1))
-        if 0 < val <= MAX_CEILING:
-            return val
-
-    # Pass 4: Parenthetical Chinese notation (e.g. '(870萬)' or '(11億 1,211萬 1,111)')
-    full_text = " ".join(lines)
-    paren_match = re.search(r"\((.*?)\)", full_text)
-    content = paren_match.group(1) if paren_match else (lines[1] if len(lines) > 1 else lines[0])
-    norm = re.sub(r"[萬万ÆæWw]", "萬", content)
-    norm = re.sub(r"[億亿]", "億", norm)
-    if "億" in norm or "萬" in norm:
-        yi_val = 0
-        wan_val = 0
-        rem = norm
-        if "億" in rem:
-            p = rem.split("億")
-            yi_digits = re.sub(r"[^\d]", "", p[0])
-            yi_val = int(yi_digits) if yi_digits else 0
-            rem = p[1]
-        if "萬" in rem:
-            p = rem.split("萬")
-            wan_digits = re.sub(r"[^\d]", "", p[0])
-            wan_val = int(wan_digits) if wan_digits else 0
-            rem = p[1]
-        rest_digits = re.sub(r"[^\d]", "", rem)
-        rest_val = int(rest_digits) if rest_digits else 0
-        val = yi_val * 100_000_000 + wan_val * 10_000 + rest_val
-        if 0 < val <= MAX_CEILING:
-            return val
-
-    # Pass 5: Fallback: digits on Line 1 only if reasonable size (<= 30 billion)
-    fallback_digits = re.sub(r"[^\d]", "", line1)
-    if fallback_digits:
+    # Ignore all punctuation (dots, commas, spaces, dashes, symbols) and extract pure digits
+    digits = re.sub(r"[^\d]", "", line1)
+    if digits:
         try:
-            val = int(fallback_digits)
+            val = int(digits)
             if 0 < val <= MAX_CEILING:
                 return val
         except ValueError:
@@ -158,6 +109,34 @@ def normalize_item_name(text: str) -> str:
     cleaned = cleaned.replace("℅", "%").replace("c/o", "%")
     cleaned = cleaned.replace("]", "").replace("【", "").replace("】", "")
     
+    # Common OCR typo dictionary
+    TYPO_MAP = {
+        '結加特器': '凍結加持器',
+        '慧母': '智慧母礦',
+        '碎片': '時間碎片',
+        '問片': '時間碎片',
+        '時片': '時間碎片',
+        '高移石': '高級瞬移之石',
+        '背包': '神祕背包',
+        '蠖身符': '護身符',
+        '天花': '漫天花雨',
+        '夭花雨': '漫天花雨',
+        '谩夭花': '漫天花雨',
+        '〕É釁30': '挑釁 30',
+        '頭防禦卷軸70%': '頭盔防禦卷軸70%',
+        '漫天花雨箱(11%': '漫天花雨箱(11個)',
+        '蓮水晶': '幸運水晶',
+        '幸蓮水品': '幸運水晶',
+        '幸永品': '幸運水晶',
+        '力量永品': '力量水晶',
+        '壢水品': '力量水晶',
+        '慧水品': '智慧水晶',
+        '運水品': '幸運水晶',
+        '捷水品': '敏捷水晶',
+    }
+    if cleaned in TYPO_MAP:
+        return TYPO_MAP[cleaned]
+
     # Common OCR radical and character misrecognitions
     cleaned = cleaned.replace("防卷", "防禦卷")
     cleaned = cleaned.replace("頸", "頭").replace("頝", "頭").replace("皕", "頭")

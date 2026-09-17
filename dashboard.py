@@ -14,6 +14,9 @@ WATCHLIST_FILE = Path(__file__).resolve().parent / "items_watchlist.json"
 JS_STANDALONE = Path(__file__).resolve().parent / "lightweight-charts.standalone.js"
 
 def classify_item(name: str) -> str:
+    consumable_keywords = ['超級藥水', '特殊藥水', '藥水']
+    if any(k in name for k in consumable_keywords):
+        return '消耗'
     skill_keywords = ['楓葉祝福', '挑釁', '技能書', '母書']
     if any(k in name for k in skill_keywords):
         return '技能書'
@@ -796,6 +799,12 @@ def generate_dashboard_html():
             border: 1px solid rgba(255, 87, 34, 0.25);
         }
 
+        .cat-consumable {
+            background-color: rgba(233, 30, 99, 0.15);
+            color: #f48fb1;
+            border: 1px solid rgba(233, 30, 99, 0.25);
+        }
+
         .item-title-text {
             font-weight: 600;
             color: #ffffff;
@@ -1277,6 +1286,7 @@ def generate_dashboard_html():
                     <button class="pill-btn" data-cat="現金道具">現金道具 (<span id="count-cash">0</span>)</button>
                     <button class="pill-btn" data-cat="材料">材料 (<span id="count-mat">0</span>)</button>
                     <button class="pill-btn" data-cat="技能書">技能書 (<span id="count-skill">0</span>)</button>
+                    <button class="pill-btn" data-cat="消耗">消耗 (<span id="count-consumable">0</span>)</button>
                 </div>
             </div>
             <div class="toolbar-row" id="rate-row">
@@ -1479,6 +1489,7 @@ def generate_dashboard_html():
                 case "防具卷": return "cat-arm";
                 case "現金道具": return "cat-cash";
                 case "材料": return "cat-mat";
+                case "消耗": return "cat-consumable";
                 default: return "cat-acc";
             }
         }
@@ -1491,6 +1502,7 @@ def generate_dashboard_html():
                 case "防具卷": return "防具";
                 case "現金道具": return "現金";
                 case "材料": return "材料";
+                case "消耗": return "消耗";
                 default: return cat;
             }
         }
@@ -1705,7 +1717,7 @@ def generate_dashboard_html():
                 }
 
                 // Rate
-                if (currentCat !== "現金道具" && currentCat !== "材料" && currentCat !== "技能書" && currentRate !== "all") {
+                if (currentCat !== "現金道具" && currentCat !== "材料" && currentCat !== "技能書" && currentCat !== "消耗" && currentRate !== "all") {
                     if (it.rate !== currentRate) return false;
                 }
 
@@ -1809,6 +1821,7 @@ def generate_dashboard_html():
             document.getElementById("count-cash").textContent = summaryList.filter(s => s.category === "現金道具").length;
             document.getElementById("count-mat").textContent = summaryList.filter(s => s.category === "材料").length;
             document.getElementById("count-skill").textContent = summaryList.filter(s => s.category === "技能書").length;
+            document.getElementById("count-consumable").textContent = summaryList.filter(s => s.category === "消耗").length;
             updateFavoriteCounts();
         }
 
@@ -2079,7 +2092,7 @@ def generate_dashboard_html():
                 currentCat = btn.getAttribute("data-cat");
 
                 const rateRow = document.getElementById("rate-row");
-                if (currentCat === "現金道具" || currentCat === "材料" || currentCat === "技能書") {
+                if (currentCat === "現金道具" || currentCat === "材料" || currentCat === "技能書" || currentCat === "消耗") {
                     rateRow.style.display = "none";
                     currentRate = "all";
                 } else {

@@ -281,11 +281,12 @@ class MarketCollector:
             logger.warning("Frame capture returned empty.")
             return {"tab": "unknown", "count": 0, "signature": None}
 
-        try:
-            os.makedirs("data", exist_ok=True)
-            frame.save("data/last_captured_frame.jpg", format="JPEG", quality=85)
-        except Exception:
-            pass
+        if self.use_adb:
+            try:
+                os.makedirs("data", exist_ok=True)
+                frame.save("data/last_captured_frame.jpg", format="JPEG", quality=85)
+            except Exception:
+                pass
 
         parser = MarketParser(frame, item_name=item_name)
         res = parser.parse()

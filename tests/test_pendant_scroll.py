@@ -4,7 +4,8 @@ import sqlite3
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parser import MarketParser
@@ -39,13 +40,13 @@ def test_pendant_scroll():
 
     # Clear Row 1 cells and draw '墜飾幸運卷軸30%'
     bg_color = (42, 42, 42)
-    draw.rectangle([(335, 160), (555, 198)], fill=bg_color)
-    draw.rectangle([(550, 160), (790, 198)], fill=bg_color)
+    draw.rectangle([(335, 155), (555, 201)], fill=bg_color)
+    draw.rectangle([(550, 155), (820, 201)], fill=bg_color)
 
-    font = ImageFont.truetype("msjh.ttc", 15)
-    draw.text((345, 169), "墜飾幸運卷軸30%", fill=(255, 255, 255), font=font)
-    draw.text((580, 169), "880,000", fill=(255, 255, 255), font=font)
-    draw.text((690, 169), "880,000", fill=(255, 255, 255), font=font)
+    font = ImageFont.truetype("msjh.ttc", 16)
+    draw.text((365, 160), "墜飾幸運卷軸30%", fill=(255, 255, 255), font=font)
+    draw.text((580, 160), "880,000", fill=(255, 255, 255), font=font)
+    draw.text((710, 160), "880,000", fill=(255, 255, 255), font=font)
 
     parser = MarketParser(test_img)
     listings = parser.parse_active_listings()
@@ -65,7 +66,14 @@ def test_pendant_scroll():
     # 3. Test Database Persistence & Arbitrage / Spread Analytics
     print("\n[Step 3: Database & Spread Analytics Test]")
     init_db()
-    # Save active ask: 880,000
+    # Use dedicated test DB to prevent interference with production market.db
+    TEST_DB = Path(__file__).resolve().parent.parent / "data" / "test_pendant.db"
+    if TEST_DB.exists():
+        TEST_DB.unlink()
+    import src.database
+    src.database.DB_PATH = TEST_DB
+    init_db()
+
     save_active_listings([row1])
 
     # Save matched trade: 950,000
@@ -79,7 +87,7 @@ def test_pendant_scroll():
     save_matched_trades([matched_sample])
 
     # Query Spread
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(TEST_DB) as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 
@@ -106,6 +114,12 @@ def test_pendant_scroll():
 
         assert spread == -7.37, f"Expected spread -7.37%, got {spread}%"
         print("  [PASS] Spread analytics matched expected financial metrics.")
+
+    if TEST_DB.exists():
+        try:
+            TEST_DB.unlink()
+        except PermissionError:
+            pass
 
     print("\n==================================================")
     print("TEST COMPLETED SUCCESSFULLY: 墜飾幸運卷軸30% ALL PASS")

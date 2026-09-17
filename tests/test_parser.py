@@ -3,7 +3,8 @@ import io
 from pathlib import Path
 from PIL import Image
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding="utf-8")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.parser import MarketParser

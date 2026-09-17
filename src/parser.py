@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from PIL import Image
 from .models import ActiveListing, MatchedTrade, SearchQuota
 from .ocr_engine import preprocess_for_ocr, ocr_image, extract_number, normalize_item_name
+from .digit_engine import parse_price_cell, parse_timestamp_cell
 
 UNPROCESSED_CROPS_DIR = Path(__file__).resolve().parent.parent / "data" / "unprocessed_crops"
 
@@ -147,22 +148,22 @@ class MarketParser:
             elif not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, top line only y1..y1+26, cuts out Chinese unit below)
-            tot_box = self._scale_box(580, y1, 688, y1 + 26)
-            tot_crop = self.raw_image.crop(tot_box).resize((350, 70), Image.Resampling.LANCZOS)
-            tot_text = ocr_image(tot_crop, lang="en-US")
-            total_price = extract_number(tot_text)
+            # 2. Total Price (Amount) - Column 2
+            tot_crop = self.raw_image.crop(self._scale_box(550, y1, 675, y2))
+            total_price = parse_price_cell(tot_crop, tab="query")
             if total_price is None:
-                tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
+                # Safety fallback to OCR using tight single-line crop
+                tot_ocr_crop = self.raw_image.crop(self._scale_box(580, y1, 688, y1 + 26)).resize((350, 70), Image.Resampling.LANCZOS)
+                tot_text = ocr_image(tot_ocr_crop, lang="en-US") or ocr_image(tot_ocr_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price - Column 3 (x: 705 to 805, top line only y1..y1+26, cuts out Chinese unit below)
-            unit_box = self._scale_box(705, y1, 805, y1 + 26)
-            unit_crop = self.raw_image.crop(unit_box).resize((350, 70), Image.Resampling.LANCZOS)
-            unit_text = ocr_image(unit_crop, lang="en-US")
-            unit_price = extract_number(unit_text)
+            # 3. Unit Price - Column 3
+            unit_crop = self.raw_image.crop(self._scale_box(675, y1, 790, y2))
+            unit_price = parse_price_cell(unit_crop, tab="query")
             if unit_price is None:
-                unit_text = ocr_image(unit_crop, lang="zh-Hant-TW")
+                # Check if OCR can read a unit price (e.g. for legacy 1024x576 or bundle items)
+                unit_ocr_crop = self.raw_image.crop(self._scale_box(705, y1, 805, y1 + 26)).resize((350, 70), Image.Resampling.LANCZOS)
+                unit_text = ocr_image(unit_ocr_crop, lang="en-US") or ocr_image(unit_ocr_crop, lang="zh-Hant-TW")
                 unit_price = extract_number(unit_text)
 
             # If both price columns are empty, the row is empty (end of results)
@@ -239,22 +240,22 @@ class MarketParser:
             elif not item_name or len(item_name) < 2:
                 continue
 
-            # 2. Total Price (Amount) - Column 2 (x: 580 to 688, top line only y1..y1+26, cuts out Chinese unit below)
-            tot_box = self._scale_box(580, y1, 688, y1 + 26)
-            tot_crop = self.raw_image.crop(tot_box).resize((350, 70), Image.Resampling.LANCZOS)
-            tot_text = ocr_image(tot_crop, lang="en-US")
-            total_price = extract_number(tot_text)
+            # 2. Total Price (Amount) - Column 2
+            tot_crop = self.raw_image.crop(self._scale_box(550, y1, 675, y2))
+            total_price = parse_price_cell(tot_crop, tab="market")
             if total_price is None:
-                tot_text = ocr_image(tot_crop, lang="zh-Hant-TW")
+                # Safety fallback to OCR using tight single-line crop
+                tot_ocr_crop = self.raw_image.crop(self._scale_box(580, y1, 688, y1 + 26)).resize((350, 70), Image.Resampling.LANCZOS)
+                tot_text = ocr_image(tot_ocr_crop, lang="en-US") or ocr_image(tot_ocr_crop, lang="zh-Hant-TW")
                 total_price = extract_number(tot_text)
 
-            # 3. Unit Price - Column 3 (x: 705 to 805, top line only y1..y1+26, cuts out Chinese unit below)
-            unit_box = self._scale_box(705, y1, 805, y1 + 26)
-            unit_crop = self.raw_image.crop(unit_box).resize((350, 70), Image.Resampling.LANCZOS)
-            unit_text = ocr_image(unit_crop, lang="en-US")
-            unit_price = extract_number(unit_text)
+            # 3. Unit Price - Column 3
+            unit_crop = self.raw_image.crop(self._scale_box(675, y1, 790, y2))
+            unit_price = parse_price_cell(unit_crop, tab="market")
             if unit_price is None:
-                unit_text = ocr_image(unit_crop, lang="zh-Hant-TW")
+                # Check if OCR can read a unit price (e.g. for legacy 1024x576 or bundle items)
+                unit_ocr_crop = self.raw_image.crop(self._scale_box(705, y1, 805, y1 + 26)).resize((350, 70), Image.Resampling.LANCZOS)
+                unit_text = ocr_image(unit_ocr_crop, lang="en-US") or ocr_image(unit_ocr_crop, lang="zh-Hant-TW")
                 unit_price = extract_number(unit_text)
 
             # If both price columns are empty, the row is empty (end of results)
@@ -293,32 +294,34 @@ class MarketParser:
 
             # 4. Matched Time (x: 822 to 920, y: y1+6 to y1+33, excludes user ID)
             meta_box = self._scale_box(822, y1 + 6, 920, y1 + 33)
-            meta_crop = self.raw_image.crop(meta_box).resize((350, 75), Image.Resampling.LANCZOS)
-            meta_text = ocr_image(meta_crop, lang="en-US")
+            meta_crop = self.raw_image.crop(meta_box)
+            trade_time = parse_timestamp_cell(meta_crop)
 
-            # Extract date time skipping whatever dots, dashes, slashes, or whitespace
-            time_match = re.search(
-                r"(?P<year>202\d|2\d)\D+(?P<month>0?[1-9]|1[0-2])\D+(?P<day>0?[1-9]|[12]\d|3[01])\D+(?P<hour>[01]?\d|2[0-3])\D+(?P<minute>[0-5]\d)",
-                meta_text
-            )
-            if time_match:
-                d = time_match.groupdict()
-                y = '20' + d['year'] if len(d['year']) == 2 else d['year']
-                trade_time = f"{y}-{int(d['month']):02d}-{int(d['day']):02d} {int(d['hour']):02d}:{int(d['minute']):02d}"
-            else:
-                short_match = re.search(r"(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)", meta_text)
-                if short_match:
-                    h = int(short_match.group("hour"))
-                    mi = int(short_match.group("minute"))
-                    now = datetime.now()
-                    # If parsed time is ahead of current time, it MUST have occurred yesterday
-                    if (h, mi) > (now.hour, now.minute):
-                        trade_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-                    else:
-                        trade_date = now.strftime("%Y-%m-%d")
-                    trade_time = f"{trade_date} {h:02d}:{mi:02d}"
+            if not trade_time:
+                # Safety fallback to regex OCR
+                meta_ocr_crop = meta_crop.resize((350, 75), Image.Resampling.LANCZOS)
+                meta_text = ocr_image(meta_ocr_crop, lang="en-US")
+                time_match = re.search(
+                    r"(?P<year>202\d|2\d)\D+(?P<month>0?[1-9]|1[0-2])\D+(?P<day>0?[1-9]|[12]\d|3[01])\D+(?P<hour>[01]?\d|2[0-3])\D+(?P<minute>[0-5]\d)",
+                    meta_text
+                )
+                if time_match:
+                    d = time_match.groupdict()
+                    y = '20' + d['year'] if len(d['year']) == 2 else d['year']
+                    trade_time = f"{y}-{int(d['month']):02d}-{int(d['day']):02d} {int(d['hour']):02d}:{int(d['minute']):02d}"
                 else:
-                    trade_time = None
+                    short_match = re.search(r"(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)", meta_text)
+                    if short_match:
+                        h = int(short_match.group("hour"))
+                        mi = int(short_match.group("minute"))
+                        now = datetime.now()
+                        if (h, mi) > (now.hour, now.minute):
+                            trade_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+                        else:
+                            trade_date = now.strftime("%Y-%m-%d")
+                        trade_time = f"{trade_date} {h:02d}:{mi:02d}"
+                    else:
+                        trade_time = None
 
             trades.append(MatchedTrade(
                 item_name=item_name,

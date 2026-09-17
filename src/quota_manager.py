@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -8,6 +9,7 @@ QUOTA_FILE = Path(__file__).resolve().parent.parent / "data" / "quota_tracker.js
 DAILY_LIMIT = 500
 RESET_HOUR = 8  # 08:00 AM
 DEFAULT_INSTANCES = ["祈禱機", "槍手", "打火機", "弩手"]
+_QUOTA_LOCK = threading.RLock()
 
 class QuotaManager:
     """
@@ -49,64 +51,66 @@ class QuotaManager:
             })
 
     def _load(self) -> Dict:
-        curr_cycle = self._get_current_quota_day()
-        try:
-            with open(self.quota_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        with _QUOTA_LOCK:
+            curr_cycle = self._get_current_quota_day()
+            try:
+                with open(self.quota_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
 
-            # Check if quota cycle rolled over past 08:00 AM
-            if data.get("quota_cycle_date") != curr_cycle:
-                data = {
+                # Check if quota cycle rolled over past 08:00 AM
+                if data.get("quota_cycle_date") != curr_cycle:
+                    data = {
+                        "quota_cycle_date": curr_cycle,
+                        "active_instance": self.known_instances[0],
+                        "instances": self._init_instances_dict(),
+                        "last_updated": datetime.now().isoformat()
+                    }
+                    self._save(data)
+                    return data
+
+                # Backwards compatibility migration if 'instances' is missing
+                if "instances" not in data:
+                    old_consumed = data.get("consumed_searches", 0)
+                    old_remaining = data.get("remaining_searches", self.limit)
+                    inst_dict = self._init_instances_dict()
+                    inst_dict["祈禱機"]["consumed_searches"] = old_consumed
+                    inst_dict["祈禱機"]["remaining_searches"] = old_remaining
+                    data["instances"] = inst_dict
+                    data["active_instance"] = self.known_instances[0]
+                    self._save(data)
+
+                # Ensure all known instances exist in data
+                changed = False
+                for name in self.known_instances:
+                    if name not in data["instances"]:
+                        data["instances"][name] = {
+                            "consumed_searches": 0,
+                            "remaining_searches": self.limit
+                        }
+                        changed = True
+
+                if "active_instance" not in data or data["active_instance"] not in self.known_instances:
+                    data["active_instance"] = self.known_instances[0]
+                    changed = True
+
+                if changed:
+                    self._save(data)
+
+                return data
+            except Exception:
+                fallback = {
                     "quota_cycle_date": curr_cycle,
                     "active_instance": self.known_instances[0],
                     "instances": self._init_instances_dict(),
                     "last_updated": datetime.now().isoformat()
                 }
-                self._save(data)
-                return data
-
-            # Backwards compatibility migration if 'instances' is missing
-            if "instances" not in data:
-                old_consumed = data.get("consumed_searches", 0)
-                old_remaining = data.get("remaining_searches", self.limit)
-                inst_dict = self._init_instances_dict()
-                inst_dict["祈禱機"]["consumed_searches"] = old_consumed
-                inst_dict["祈禱機"]["remaining_searches"] = old_remaining
-                data["instances"] = inst_dict
-                data["active_instance"] = self.known_instances[0]
-                self._save(data)
-
-            # Ensure all known instances exist in data
-            changed = False
-            for name in self.known_instances:
-                if name not in data["instances"]:
-                    data["instances"][name] = {
-                        "consumed_searches": 0,
-                        "remaining_searches": self.limit
-                    }
-                    changed = True
-
-            if "active_instance" not in data or data["active_instance"] not in self.known_instances:
-                data["active_instance"] = self.known_instances[0]
-                changed = True
-
-            if changed:
-                self._save(data)
-
-            return data
-        except Exception:
-            fallback = {
-                "quota_cycle_date": curr_cycle,
-                "active_instance": self.known_instances[0],
-                "instances": self._init_instances_dict(),
-                "last_updated": datetime.now().isoformat()
-            }
-            self._save(fallback)
-            return fallback
+                self._save(fallback)
+                return fallback
 
     def _save(self, data: Dict):
-        with open(self.quota_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        with _QUOTA_LOCK:
+            with open(self.quota_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
 
     def get_active_instance(self) -> str:
         data = self._load()

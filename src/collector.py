@@ -12,6 +12,7 @@ from .instance_launcher import InstanceLauncher
 from .tier_evaluator import update_item_timestamp, TierEvaluator
 from .async_ocr import AsyncOcrWorker
 from .adb_controller import AdbController
+from .dataset_logger import save_dataset_frame
 
 def _discover_instances() -> Dict[str, str]:
     mapping = {
@@ -292,6 +293,7 @@ class MarketCollector:
         res = parser.parse()
         tab = res["tab"]
         records = res["records"]
+        save_dataset_frame(frame, item_name=item_name, tab=tab, page_num=1, device_id=self.adb.device_id if self.adb else None)
 
         try:
             if tab == "market":
@@ -366,7 +368,7 @@ class MarketCollector:
             logger.debug(f"Page 1 Micro-OCR: Detected page {curr_p}/{total_p}. Target to collect: {target_pages} pages.")
 
             # Queue Page 1 for background full OCR & DB persistence
-            self.ocr_worker.submit(frame1, tab=tab, page_num=1, item_name=item_name)
+            self.ocr_worker.submit(frame1, tab=tab, page_num=1, item_name=item_name, device_id=self.adb.device_id if self.adb else None)
 
             if target_pages <= 1:
                 logger.debug(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
@@ -391,7 +393,7 @@ class MarketCollector:
                     logger.warning(f"Frame capture returned empty on page {page_idx}.")
                     break
 
-                self.ocr_worker.submit(frame, tab=tab, page_num=page_idx, item_name=item_name)
+                self.ocr_worker.submit(frame, tab=tab, page_num=page_idx, item_name=item_name, device_id=self.adb.device_id if self.adb else None)
 
             self.ocr_worker.wait_all()
 

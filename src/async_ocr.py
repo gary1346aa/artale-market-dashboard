@@ -6,6 +6,7 @@ from typing import Optional
 from PIL import Image
 from .parser import MarketParser
 from .database import save_active_listings, save_matched_trades
+from .dataset_logger import save_dataset_frame
 
 logger = logging.getLogger("ArtaleCollector")
 
@@ -22,11 +23,11 @@ class AsyncOcrWorker:
         self._thread = threading.Thread(target=self._worker_loop, daemon=True, name="AsyncOcrWorker")
         self._thread.start()
 
-    def submit(self, frame: Image.Image, tab: str, page_num: int, item_name: Optional[str] = None):
+    def submit(self, frame: Image.Image, tab: str, page_num: int, item_name: Optional[str] = None, device_id: Optional[str] = None):
         """
         Enqueues a captured frame for background OCR parsing and DB persistence.
         """
-        self._queue.put((frame, tab, page_num, item_name))
+        self._queue.put((frame, tab, page_num, item_name, device_id))
 
     def _worker_loop(self):
         while True:
@@ -35,8 +36,16 @@ class AsyncOcrWorker:
                 self._queue.task_done()
                 break
 
-            frame, tab, page_num, item_name = item
+            if len(item) == 5:
+                frame, tab, page_num, item_name, device_id = item
+            else:
+                frame, tab, page_num, item_name = item
+                device_id = None
+
             try:
+                # Persist raw frame to permanent test dataset
+                save_dataset_frame(frame, item_name=item_name, tab=tab, page_num=page_num, device_id=device_id)
+
                 parser = MarketParser(frame, item_name=item_name)
                 res = parser.parse()
                 records = res.get("records", [])

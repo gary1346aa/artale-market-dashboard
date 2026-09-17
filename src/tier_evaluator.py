@@ -9,10 +9,13 @@ if sys.platform == "win32":
 import json
 import sqlite3
 import logging
+import threading
 from datetime import datetime
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+_WL_LOCK = threading.Lock()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("TierEvaluator")
@@ -256,19 +259,20 @@ def update_item_timestamp(item_name: str, watchlist_path: Optional[Path] = None)
     wl_file = watchlist_path or WATCHLIST_PATH
     if not wl_file.exists():
         return
-    try:
-        with open(wl_file, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if isinstance(raw, dict) and item_name in raw:
-            if isinstance(raw[item_name], dict):
-                raw[item_name]["last_updated"] = now_str
-            else:
-                raw[item_name] = {"tier": raw[item_name], "last_updated": now_str}
-            with open(wl_file, "w", encoding="utf-8") as f:
-                json.dump(raw, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.debug(f"Could not update timestamp for '{item_name}': {e}")
+    with _WL_LOCK:
+        try:
+            with open(wl_file, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if isinstance(raw, dict) and item_name in raw:
+                if isinstance(raw[item_name], dict):
+                    raw[item_name]["last_updated"] = now_str
+                else:
+                    raw[item_name] = {"tier": raw[item_name], "last_updated": now_str}
+                with open(wl_file, "w", encoding="utf-8") as f:
+                    json.dump(raw, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.debug(f"Could not update timestamp for '{item_name}': {e}")
 
 def get_due_items(watchlist_path: Optional[Path] = None) -> Tuple[List[str], float, Optional[str]]:
     """

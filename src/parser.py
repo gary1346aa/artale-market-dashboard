@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple, Dict, Any
 from PIL import Image
 from .models import ActiveListing, MatchedTrade, SearchQuota
-from .ocr_engine import preprocess_for_ocr, ocr_image, extract_number, normalize_item_name
+from .ocr_engine import preprocess_for_ocr, ocr_image, extract_number, normalize_item_name, get_canonical_watchlist
 from .digit_engine import parse_price_cell, parse_timestamp_cell
 
 UNPROCESSED_CROPS_DIR = Path(__file__).resolve().parent.parent / "data" / "unprocessed_crops"
@@ -141,7 +141,9 @@ class MarketParser:
             item_name = normalize_item_name(raw_name)
 
             if self.expected_item_name:
-                if not item_name or len(item_name) < 2:
+                if self.expected_item_name in get_canonical_watchlist():
+                    item_name = self.expected_item_name
+                elif not item_name or len(item_name) < 2:
                     item_name = self.expected_item_name
                 elif self.expected_item_name in item_name or item_name in self.expected_item_name:
                     item_name = self.expected_item_name
@@ -233,7 +235,9 @@ class MarketParser:
             item_name = normalize_item_name(raw_name)
 
             if self.expected_item_name:
-                if not item_name or len(item_name) < 2:
+                if self.expected_item_name in get_canonical_watchlist():
+                    item_name = self.expected_item_name
+                elif not item_name or len(item_name) < 2:
                     item_name = self.expected_item_name
                 elif self.expected_item_name in item_name or item_name in self.expected_item_name:
                     item_name = self.expected_item_name

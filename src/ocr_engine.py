@@ -129,7 +129,9 @@ def normalize_item_name(text: str) -> str:
         '幸蓮水品': '幸運水晶',
         '幸永品': '幸運水晶',
         '力量永品': '力量水晶',
-        '壢水品': '力量水晶',
+        '壢水品': '敏捷水晶',
+        '壢水晶': '敏捷水晶',
+        '壢水': '敏捷水晶',
         '慧水品': '智慧水晶',
         '運水品': '幸運水晶',
         '捷水品': '敏捷水晶',
@@ -138,6 +140,7 @@ def normalize_item_name(text: str) -> str:
         return TYPO_MAP[cleaned]
 
     # Common OCR radical and character misrecognitions
+    cleaned = cleaned.replace("壢", "敏捷")
     cleaned = cleaned.replace("防卷", "防禦卷")
     cleaned = cleaned.replace("頸", "頭").replace("頝", "頭").replace("皕", "頭")
     cleaned = cleaned.replace("墜鉓", "墜飾").replace("峷", "幸").replace("装", "裝")

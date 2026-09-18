@@ -1958,10 +1958,11 @@ def parse_timestamp_cell(cell_crop: Optional[Image.Image]) -> Optional[str]:
 
 def parse_quota_header(frame: Optional[Image.Image]) -> Optional[Tuple[int, int]]:
     """
-    Deterministically parses the Artale Auction House search quota header ('搜尋次數 REMAINING/TOTAL')
-    directly from an in-memory frame using the Digit Engine.
+    Deterministically parses the Artale Auction House search quota ('XXX')
+    directly from the remaining digits region using the Digit Engine.
+    Ignores '搜尋次數', '/', and '500', focusing strictly on the 1-3 digits of remaining searches.
     Guarantees 100% mathematical precision with zero OCR hallucinations.
-    Returns (remaining_searches, total_limit), or None if Auction House is not open / header not visible.
+    Returns (remaining_searches, 500), or None if Auction House is not open / region not visible.
     """
     if frame is None:
         return None
@@ -1971,19 +1972,20 @@ def parse_quota_header(frame: Optional[Image.Image]) -> Optional[Tuple[int, int]
 
     # Scale coordinates if running on different resolution than canonical 1280x720
     sx, sy = w / 1280.0, h / 720.0
-    crop_x1, crop_y1 = int(480 * sx), int(10 * sy)
-    crop_x2, crop_y2 = int(650 * sx), int(30 * sy)
+    # Region of strictly the remaining digits XXX: x=543..574, y=10..28
+    crop_x1, crop_y1 = int(543 * sx), int(10 * sy)
+    crop_x2, crop_y2 = int(574 * sx), int(28 * sy)
 
     cell = frame.crop((crop_x1, crop_y1, crop_x2, crop_y2))
     cw, ch = cell.size
 
-    # Fast direct pixel lookup for bright yellow/gold header text (R > 150, G > 130, B < 90)
+    # Fast direct pixel lookup for bright yellow/gold text (R > 140, G > 120, B < 90)
     px = cell.load()
-    mask = [[1 if (px[x, y][0] > 150 and px[x, y][1] > 130 and px[x, y][2] < 90) else 0 for x in range(cw)] for y in range(ch)]
+    mask = [[1 if (px[x, y][0] > 140 and px[x, y][1] > 120 and px[x, y][2] < 90) else 0 for x in range(cw)] for y in range(ch)]
 
     # Dynamic vertical baseline detection
     row_sums = [sum(row) for row in mask]
-    cands = [y for y, s in enumerate(row_sums) if s >= 10]
+    cands = [y for y, s in enumerate(row_sums) if s >= 3]
     if not cands:
         return None
 
@@ -2014,53 +2016,27 @@ def parse_quota_header(frame: Optional[Image.Image]) -> Optional[Tuple[int, int]
     if in_g:
         spans.append((start, cw))
 
-    # Filter out Chinese characters '搜尋次數': Chinese characters have width >= 10
-    digit_spans = []
-    found_wide = 0
+    digits: List[str] = []
     for s, e in spans:
         gw = e - s
-        if gw >= 10:
-            found_wide += 1
-            continue
-        # Digits start after Chinese characters or past x >= 55
-        if found_wide >= 2 or s >= int(55 * sx):
-            digit_spans.append((s, e))
+        glyph_crop = strip.crop((s, 0, e, 10))
 
-    slash_idx = None
-    elements = []
-    for idx, (s, e) in enumerate(digit_spans):
-        gw = e - s
-        crop = strip.crop((s, 0, e, 10))
+        # If slash is reached, stop reading digits immediately
+        if gw <= 4:
+            c_sums = [sum(glyph_crop.getpixel((x, y)) for y in range(10)) for x in range(gw)]
+            if max(c_sums) <= 4:
+                break
 
-        # Check for forward slash '/': width <= 5 with top-right to bottom-left stroke
-        is_slash = False
-        if gw <= 5:
-            upper_xs = [x for y in range(4) for x in range(gw) if crop.getpixel((x, y))]
-            lower_xs = [x for y in range(6, 10) for x in range(gw) if crop.getpixel((x, y))]
-            if upper_xs and lower_xs and max(upper_xs) > min(lower_xs):
-                is_slash = True
-
-        if is_slash and slash_idx is None:
-            slash_idx = idx
-            elements.append("/")
-        elif gw <= 8:
-            d = match_glyph(crop)
-            elements.append(d)
+        # Match single digit
+        if gw <= 8:
+            digits.append(match_glyph(glyph_crop))
         elif 12 <= gw <= 16:
-            d1 = match_glyph(crop.crop((0, 0, 7, 10)))
-            d2 = match_glyph(crop.crop((gw - 7, 0, gw, 10)))
-            elements.append(d1)
-            elements.append(d2)
+            # Two touching digits
+            digits.append(match_glyph(glyph_crop.crop((0, 0, 7, 10))))
+            digits.append(match_glyph(glyph_crop.crop((gw - 7, 0, gw, 10))))
 
-    if slash_idx is None:
+    val_str = "".join(digits)
+    if not val_str.isdigit():
         return None
 
-    before_slash = "".join(elements[:slash_idx])
-    after_slash = "".join(elements[slash_idx + 1:])
-
-    if not before_slash.isdigit():
-        return None
-
-    rem_val = int(before_slash)
-    denom = int(after_slash) if after_slash.isdigit() else 500
-    return rem_val, denom
+    return int(val_str), 500

@@ -58,13 +58,7 @@ class ParallelCollector:
         def worker_thread(device_id: str):
             nonlocal completed_count
             inst_name = DEVICE_TO_INSTANCE.get(device_id, device_id)
-
-            # 1. Pre-boot Quota Check: If instance has no quota left, don't boot or touch the queue
-            from .quota_manager import QuotaManager
-            qm = QuotaManager()
-            if not qm.can_search(inst_name, required=1):
-                logger.warning(f"[{device_id}] Instance '{inst_name}' quota exhausted. Skipping worker.")
-                return
+            from .quota_manager import pause_until_next_8am
 
             logger.info(f"[{device_id}] Worker booting for instance '{inst_name}'...")
 
@@ -83,14 +77,17 @@ class ParallelCollector:
                 logger.error(f"[{device_id}] Could not verify or enter Auction House after 3 attempts. Worker aborting.")
                 return
 
+            # Check screen quota on entry
+            rem = collector.get_screen_quota()
+            if rem is not None and rem < 2:
+                logger.warning(f"[{device_id}] Instance '{inst_name}' initial quota exhausted ({rem} < 2). Pausing until 08:00 AM reset...")
+                collector.leave_auction()
+                pause_until_next_8am(inst_name)
+                collector.ensure_focus()
+
             logger.info(f"[{device_id}] Ready. Draining task queue dynamically...")
             try:
                 while not task_queue.empty():
-                    # 2. In-loop Quota Check: If quota ran out during this batch, stop gracefully
-                    if not collector.quota_mgr.can_search(collector.current_instance, required=1):
-                        logger.warning(f"[{device_id}] Instance '{inst_name}' quota exhausted during run. Worker stopping.")
-                        break
-
                     try:
                         idx, total_total, item = task_queue.get_nowait()
                     except queue.Empty:
@@ -103,7 +100,14 @@ class ParallelCollector:
                     logger.info(f"[{device_id}] -> Scanning [{idx}/{total_total}] (Batch Progress: {curr_progress}/{total_items}): '{item}'")
 
                     try:
-                        collector.run_query_collection(item, max_pages=effective_pages, target_tab=target_tab)
+                        ok = collector.run_query_collection(item, max_pages=effective_pages, target_tab=target_tab)
+                        if not ok:
+                            # Screen quota < 2: re-queue item and pause instance until 08:00 AM
+                            logger.warning(f"[{device_id}] Instance '{inst_name}' quota exhausted (< 2). Re-queuing '{item}' and pausing worker until 08:00 AM...")
+                            task_queue.put((idx, total_total, item))
+                            collector.leave_auction()
+                            pause_until_next_8am(inst_name)
+                            collector.ensure_focus()
                     except Exception as e:
                         logger.error(f"[{device_id}] Error scanning '{item}': {e}")
                         with failed_lock:
@@ -112,7 +116,7 @@ class ParallelCollector:
                         task_queue.task_done()
             finally:
                 collector.shutdown()
-                logger.info(f"[{device_id}] Work queue drained. Worker shutdown and exited Auction House.")
+                logger.info(f"[{device_id}] Work queue drained or worker stopped. Exited Auction House.")
 
         # Spawn worker threads
         threads = []

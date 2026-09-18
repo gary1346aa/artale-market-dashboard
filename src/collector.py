@@ -6,7 +6,7 @@ from .window_manager import WindowManager
 from .parser import MarketParser
 from .database import init_db, save_active_listings, save_matched_trades
 from .actions import human_click, human_delay, clear_and_paste, submit_existing_search
-from .quota_manager import QuotaManager, read_quota_from_frame
+from .quota_manager import read_quota_from_frame, pause_until_next_8am
 from .aggregator import KlineAggregator
 from .instance_launcher import InstanceLauncher
 from .tier_evaluator import update_item_timestamp, TierEvaluator
@@ -67,13 +67,8 @@ class MarketCollector:
     def __init__(self, window_mgr: Optional[WindowManager] = None, instance_name: Optional[str] = None, use_adb: bool = True, allow_instance_rotation: bool = True):
         self.use_adb = use_adb
         self.allow_instance_rotation = allow_instance_rotation
-        self.quota_mgr = QuotaManager()
         self.launcher = InstanceLauncher()
-        if instance_name:
-            self.current_instance = instance_name
-            self.quota_mgr.switch_instance(instance_name)
-        else:
-            self.current_instance = self.quota_mgr.get_available_instance() or "祈禱機"
+        self.current_instance = instance_name or "槍手"
         self.win_mgr = window_mgr or WindowManager(title_keywords=[self.current_instance, "LDPlayer", "雷電模擬器", "雷電"])
         self.aggregator = KlineAggregator()
         self.ocr_worker = AsyncOcrWorker()
@@ -106,7 +101,6 @@ class MarketCollector:
         """
         logger.info(f"Switching active tracker to instance '{instance_name}'...")
         self.current_instance = instance_name
-        self.quota_mgr.switch_instance(instance_name)
 
         if self.use_adb and self.adb:
             dev_id = INSTANCE_TO_DEVICE.get(instance_name, "emulator-5558")
@@ -119,33 +113,61 @@ class MarketCollector:
         logger.info(f"Switched successfully to '{instance_name}'.")
         return True
 
-    def sync_quota_from_frame(self, frame=None) -> Optional[int]:
+    def get_screen_quota(self, frame=None) -> Optional[int]:
         """
-        Reads in-game quota header '搜尋次數 XXX/500' and synchronizes quota_manager.
-        In Artale, this counter displays REMAINING / TOTAL searches.
+        Directly reads in-game quota header '搜尋次數 XXX/500' from live screen frame.
+        Uses 100% deterministic Digit Engine (parse_quota_header). Zero state maintained.
         """
         if frame is None:
             frame = self.capture_frame()
         if not frame:
             return None
         rem = read_quota_from_frame(frame)
-        if rem is not None:
-            self.quota_mgr.update_from_screen(self.current_instance, remaining=rem)
-            logger.info(f"[{self.current_instance}] Ground truth quota synced: {rem}/500 remaining.")
-            return rem
-        return None
+        if rem is None and frame is not None:
+            fresh = self.capture_frame()
+            if fresh:
+                rem = read_quota_from_frame(fresh)
+        return rem
+
+    def sync_quota_from_frame(self, frame=None) -> Optional[int]:
+        """Reads in-game quota header directly from screen. Zero state maintained."""
+        return self.get_screen_quota(frame)
+
+    def rotate_to_next_available(self, required: int = 2) -> bool:
+        """
+        Rotates to the next online attached LDPlayer instance and checks its live screen quota.
+        """
+        if not self.use_adb:
+            return False
+        attached = AdbController.list_attached_devices()
+        candidates = [name for name, dev in INSTANCE_TO_DEVICE.items() if dev in attached and name != self.current_instance]
+        for name in candidates:
+            logger.info(f"Checking alternative candidate instance '{name}'...")
+            if not self.switch_to_instance(name):
+                continue
+            rem = self.get_screen_quota()
+            if rem is not None and rem >= required:
+                logger.info(f"Switched to '{name}' with {rem}/500 live screen quota.")
+                return True
+            else:
+                logger.warning(f"Candidate '{name}' has insufficient screen quota ({rem}/500).")
+        return False
 
     def ensure_focus(self, max_retries: int = 3) -> bool:
         if self.use_adb and self.adb:
             for attempt in range(1, max_retries + 1):
                 if self.adb.is_auction_open():
-                    self.sync_quota_from_frame()
+                    rem = self.get_screen_quota()
+                    if rem is not None:
+                        logger.info(f"[{self.current_instance}] Auction House ready (Live screen quota: {rem}/500).")
                     return True
 
                 logger.info(f"Instance '{self.current_instance}' ({self.adb.device_id}) opening Auction House (attempt {attempt}/{max_retries})...")
                 if self.adb.enter_auction_from_free_market(max_wait_sec=8):
                     logger.info(f"Successfully entered Auction House on '{self.current_instance}'.")
-                    self.sync_quota_from_frame()
+                    rem = self.get_screen_quota()
+                    if rem is not None:
+                        logger.info(f"[{self.current_instance}] Live screen quota: {rem}/500.")
                     return True
 
                 if attempt < max_retries:
@@ -342,15 +364,17 @@ class MarketCollector:
             "quota": res["quota"],
             "pagination": res["pagination"],
             "count": len(records),
-            "signature": signature if records else None
+            "signature": signature if records else None,
+            "frame": frame
         }
 
-    def paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, initial_frame: Optional[Image.Image] = None, item_name: Optional[str] = None):
+    def paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, initial_frame: Optional[Image.Image] = None, item_name: Optional[str] = None) -> Optional[Image.Image]:
         """
         Scrapes current tab across pages using pipelined asynchronous OCR.
         Fast Micro-OCR path: Reads (curr_p, total_p) on Page 1 in ~15ms, then streams
         all remaining pages 2..N rapidly to the background OCR queue.
         Falls back to synchronous page-by-page verification if Page 1 pagination is unread.
+        Returns the final captured frame of the tab.
         """
         effective_max = 50 if is_market else max_pages
         tab = "market" if is_market else "query"
@@ -360,7 +384,7 @@ class MarketCollector:
         frame1 = initial_frame if initial_frame is not None else self.capture_frame()
         if not frame1:
             logger.warning("Frame capture returned empty on page 1.")
-            return
+            return None
 
         # 2. Fast Micro-OCR on pagination control
         parser1 = MarketParser(frame1, item_name=item_name)
@@ -381,6 +405,8 @@ class MarketCollector:
         except Exception:
             pass
 
+        last_frame = frame1
+
         if pagination:
             curr_p, total_p = pagination
             target_pages = min(total_p, effective_max)
@@ -389,46 +415,49 @@ class MarketCollector:
             # Queue Page 1 for background full OCR & DB persistence
             self.ocr_worker.submit(frame1, tab=tab, page_num=1, item_name=item_name, device_id=self.adb.device_id if self.adb else None)
 
-            if target_pages <= 1:
-                logger.debug(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
-                self.ocr_worker.wait_all()
-                return
+            if target_pages > 1:
+                # Rapidly flip and stream pages 2 through target_pages (validated 300ms delay)
+                for page_idx in range(2, target_pages + 1):
+                    if self.use_adb and self.adb:
+                        self.adb.tap(*self.adb.POS_NEXT_PAGE)
+                        time.sleep(0.30)
+                    else:
+                        next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
+                        if not next_pt:
+                            logger.warning("Failed to map next page coordinates.")
+                            break
+                        human_click(next_pt[0], next_pt[1])
+                        human_delay(0.35, 0.45)
 
-            # Rapidly flip and stream pages 2 through target_pages (validated 300ms delay)
-            for page_idx in range(2, target_pages + 1):
-                if self.use_adb and self.adb:
-                    self.adb.tap(*self.adb.POS_NEXT_PAGE)
-                    time.sleep(0.30)
-                else:
-                    next_pt = self.win_mgr.to_screen_coords(*self.POS_NEXT_PAGE)
-                    if not next_pt:
-                        logger.warning("Failed to map next page coordinates.")
+                    frame = self.capture_frame()
+                    if not frame:
+                        logger.warning(f"Frame capture returned empty on page {page_idx}.")
                         break
-                    human_click(next_pt[0], next_pt[1])
-                    human_delay(0.35, 0.45)
 
-                frame = self.capture_frame()
-                if not frame:
-                    logger.warning(f"Frame capture returned empty on page {page_idx}.")
-                    break
-
-                self.ocr_worker.submit(frame, tab=tab, page_num=page_idx, item_name=item_name, device_id=self.adb.device_id if self.adb else None)
+                    last_frame = frame
+                    self.ocr_worker.submit(frame, tab=tab, page_num=page_idx, item_name=item_name, device_id=self.adb.device_id if self.adb else None)
+            else:
+                logger.debug(f"Single page result ({curr_p}/{total_p}). Stopping pagination.")
 
             self.ocr_worker.wait_all()
+            return last_frame
 
         else:
             logger.debug("Pagination unparsed on Page 1. Running safe fallback loop...")
-            self._fallback_paginate_and_scrape(max_pages=max_pages, is_market=is_market, item_name=item_name)
+            return self._fallback_paginate_and_scrape(max_pages=max_pages, is_market=is_market, item_name=item_name)
 
-    def _fallback_paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, item_name: Optional[str] = None):
+    def _fallback_paginate_and_scrape(self, max_pages: int = 3, is_market: bool = False, item_name: Optional[str] = None) -> Optional[Image.Image]:
         """
         Synchronous fallback pagination loop when Page 1 pagination indicator cannot be read.
+        Returns the final captured frame of the tab.
         """
         effective_max = 50 if is_market else max_pages
         last_page_sig = None
+        last_frame = None
 
         for page_idx in range(1, effective_max + 1):
             info = self.scrape_current_page(item_name=item_name)
+            last_frame = info.get("frame")
             pagination = info.get("pagination")
             count = info.get("count", 0)
             sig = info.get("signature")
@@ -468,6 +497,8 @@ class MarketCollector:
                 else:
                     logger.warning("Failed to map next page coordinates.")
                     break
+
+        return last_frame
 
     def get_sort_direction(self, frame) -> str:
         """
@@ -524,74 +555,39 @@ class MarketCollector:
 
         return frame
 
-    def run_query_collection(self, keyword: str, max_pages: int = 2, target_tab: str = "both"):
+    def run_query_collection(self, keyword: str, max_pages: int = 2, target_tab: str = "both") -> bool:
         """
         Performs search for a keyword, ensures price sort is ascending, and collects requested tabs.
         target_tab: 'asks' (only 查詢), 'trades' (only 市價), or 'both'
+        Returns True if search succeeded, False if quota on screen is insufficient (< 2).
         """
-        # Check & auto-rotate instance if allowed and needed
-        if self.allow_instance_rotation:
-            allowed = None
-            if self.use_adb:
-                attached = AdbController.list_attached_devices()
-                allowed = [name for name, dev in INSTANCE_TO_DEVICE.items() if dev in attached]
-            active_inst = self.quota_mgr.get_available_instance(required=1, allowed_instances=allowed)
-            if not active_inst:
-                logger.warning("DAILY QUOTA EXHAUSTED across all instances. Pausing until 08:00 AM reset.")
-                return
-            if active_inst != self.current_instance:
-                if not self.switch_to_instance(active_inst):
-                    logger.error(f"Failed to switch to instance '{active_inst}'.")
-                    return
-        else:
-            if not self.quota_mgr.can_search(self.current_instance, required=1):
-                logger.warning(f"[{self.current_instance}] Quota exhausted. Pausing this worker.")
-                return
-
         if not self.ensure_focus():
-            return
+            return False
+
+        # Single check per item: Check in-game quota directly from live screen
+        req_total = 2 if target_tab == "both" else 1
+        rem = self.get_screen_quota()
+        if rem is not None:
+            logger.info(f"[{self.current_instance}] Live screen quota: {rem}/500 remaining (need {req_total}).")
+            if rem < req_total:
+                logger.warning(f"[{self.current_instance}] Quota exhausted on screen ({rem} < {req_total}).")
+                return False
 
         query_success = False
 
         # 1. Scrape Active Listings (查詢) if requested
         if target_tab in ("asks", "both"):
-            if not self.quota_mgr.can_search(self.current_instance, required=1):
-                if self.allow_instance_rotation:
-                    logger.warning(f"Quota for '{self.current_instance}' exhausted. Checking other instances...")
-                    alt_inst = self.quota_mgr.get_available_instance(required=1)
-                    if alt_inst and alt_inst != self.current_instance:
-                        self.switch_to_instance(alt_inst)
-                    else:
-                        return
-                else:
-                    return
             self.switch_to_tab("query")
             if self.execute_search(keyword, reuse_existing=False):
                 query_success = True
-                self.quota_mgr.record_search(self.current_instance, count=1)
                 verified_frame = self.ensure_price_sort_ascending()
-                if verified_frame:
-                    self.sync_quota_from_frame(verified_frame)
                 self.paginate_and_scrape(max_pages=max_pages, is_market=False, initial_frame=verified_frame, item_name=keyword)
 
         # 2. Scrape Matched Trades (市價) if requested
         if target_tab in ("trades", "both"):
-            if not self.quota_mgr.can_search(self.current_instance, required=1):
-                if self.allow_instance_rotation:
-                    logger.warning(f"Quota for '{self.current_instance}' exhausted. Checking other instances...")
-                    alt_inst = self.quota_mgr.get_available_instance(required=1)
-                    if alt_inst and alt_inst != self.current_instance:
-                        self.switch_to_instance(alt_inst)
-                        query_success = False
-                    else:
-                        return
-                else:
-                    return
             self.switch_to_tab("market")
             reuse = (target_tab == "both" and query_success)
             if self.execute_search(keyword, reuse_existing=reuse):
-                self.quota_mgr.record_search(self.current_instance, count=1)
-                # Keep default sort (sorted by match date descending) and collect ALL pages
                 self.paginate_and_scrape(max_pages=max_pages, is_market=True, item_name=keyword)
                 # Auto-generate K-line candles for this item
                 try:
@@ -607,9 +603,11 @@ class MarketCollector:
         except Exception:
             pass
 
+        return True
+
     def run_catalog_scan(self, keywords: List[str], max_pages_per_query: int = 2, target_tab: str = "both", start_index: int = 1, max_pages: Optional[int] = None):
         """
-        Iterates over a list of items and captures market data with multi-instance quota tracking and auto-retry.
+        Iterates over a list of items and captures market data with live screen quota checks and auto-retry.
         """
         pages = max_pages if max_pages is not None else max_pages_per_query
         logger.info(f"Starting catalog collection scan for {len(keywords)} items (Target Mode: '{target_tab}', Start Index: {start_index})...")
@@ -617,12 +615,9 @@ class MarketCollector:
             logger.error(f"Cannot initialize or focus instance '{self.current_instance}'. Halting scan.")
             return
 
-        quota = self.quota_mgr.get_status()
-        logger.info(
-            f"Multi-Instance Quota: {quota['total_consumed']} / {quota['total_capacity']} used "
-            f"({quota['total_remaining']} remaining across {len(quota['instances'])} instances). "
-            f"Active: '{self.current_instance}'"
-        )
+        rem = self.get_screen_quota()
+        if rem is not None:
+            logger.info(f"[{self.current_instance}] Auction House active. Live quota on screen: {rem}/500 remaining.")
 
         failed_items = []
         for idx, item in enumerate(keywords, 1):
@@ -635,7 +630,21 @@ class MarketCollector:
                     break
             logger.info(f"--- Processing [{idx}/{len(keywords)}]: '{item}' [Using: {self.current_instance}] ---")
             try:
-                self.run_query_collection(item, max_pages=pages, target_tab=target_tab)
+                ok = self.run_query_collection(item, max_pages=pages, target_tab=target_tab)
+                if not ok:
+                    # Screen quota < 2
+                    rotated = False
+                    if self.allow_instance_rotation:
+                        req = 2 if target_tab == "both" else 1
+                        rotated = self.rotate_to_next_available(required=req)
+                        if rotated:
+                            self.run_query_collection(item, max_pages=pages, target_tab=target_tab)
+                    if not rotated:
+                        # All instances exhausted: safely leave auction and pause until 8:00 AM next day
+                        self.leave_auction()
+                        pause_until_next_8am(self.current_instance)
+                        self.ensure_focus()
+                        self.run_query_collection(item, max_pages=pages, target_tab=target_tab)
             except Exception as e:
                 logger.error(f"Error processing item '{item}': {e}")
                 failed_items.append(item)

@@ -13,41 +13,22 @@ DEFAULT_INSTANCES = ["祈禱機", "槍手", "打火機", "弩手"]
 _QUOTA_LOCK = threading.RLock()
 
 
+from .digit_engine import parse_quota_header
+
+
 def read_quota_from_frame(frame) -> Optional[int]:
     """
-    Reads in-game quota header '搜尋次數 XXX/500' from an Artale screen frame.
-    In Artale, this header displays REMAINING / TOTAL searches.
-    Returns the remaining search count (XXX), or None if not detected.
+    Reads in-game quota header '搜尋次數 REMAINING/TOTAL' from an Artale screen frame.
+    Uses the 100% deterministic Digit Engine (zero OCR, zero hallucinations).
+    Returns the remaining search count, or None if not detected.
     """
     if frame is None:
         return None
     try:
-        from PIL import Image
-        import winocr
-
-        w, h = frame.size
-        if w < 500 or h < 300:
-            return None
-
-        # Coordinates on canonical 1280x720 canvas: x=475..815, y=10..60
-        sx, sy = w / 1280.0, h / 720.0
-        box = (int(475 * sx), int(10 * sy), int(815 * sx), int(60 * sy))
-        crop = frame.crop(box)
-        cw, ch = crop.size
-        # 2x lanczos resize gives high-precision recognition with winocr
-        scaled = crop.resize((cw * 2, ch * 2), Image.Resampling.LANCZOS)
-        res = winocr.recognize_pil_sync(scaled, lang="zh-Hant-TW")
-        text = res.get("text", "").strip()
-
-        # Regex: match remaining count preceding / 500
-        m = re.search(r"(\d{1,3})\s*/\s*500", text)
-        if m:
-            return int(m.group(1))
-
-        # Fallback: / 5 or / 50 if zero characters clipped
-        m2 = re.search(r"(\d{1,3})\s*[/|lI]\s*5\d*", text)
-        if m2:
-            return int(m2.group(1))
+        res = parse_quota_header(frame)
+        if res is not None:
+            remaining, _ = res
+            return remaining
     except Exception:
         pass
     return None

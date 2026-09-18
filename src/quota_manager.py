@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import threading
 from datetime import datetime, time, timedelta
 from pathlib import Path
@@ -10,6 +11,46 @@ DAILY_LIMIT = 500
 RESET_HOUR = 8  # 08:00 AM
 DEFAULT_INSTANCES = ["祈禱機", "槍手", "打火機", "弩手"]
 _QUOTA_LOCK = threading.RLock()
+
+
+def read_quota_from_frame(frame) -> Optional[int]:
+    """
+    Reads in-game quota header '搜尋次數 XXX/500' from an Artale screen frame.
+    In Artale, this header displays REMAINING / TOTAL searches.
+    Returns the remaining search count (XXX), or None if not detected.
+    """
+    if frame is None:
+        return None
+    try:
+        from PIL import Image
+        import winocr
+
+        w, h = frame.size
+        if w < 500 or h < 300:
+            return None
+
+        # Coordinates on canonical 1280x720 canvas: x=475..815, y=10..60
+        sx, sy = w / 1280.0, h / 720.0
+        box = (int(475 * sx), int(10 * sy), int(815 * sx), int(60 * sy))
+        crop = frame.crop(box)
+        cw, ch = crop.size
+        # 2x lanczos resize gives high-precision recognition with winocr
+        scaled = crop.resize((cw * 2, ch * 2), Image.Resampling.LANCZOS)
+        res = winocr.recognize_pil_sync(scaled, lang="zh-Hant-TW")
+        text = res.get("text", "").strip()
+
+        # Regex: match remaining count preceding / 500
+        m = re.search(r"(\d{1,3})\s*/\s*500", text)
+        if m:
+            return int(m.group(1))
+
+        # Fallback: / 5 or / 50 if zero characters clipped
+        m2 = re.search(r"(\d{1,3})\s*[/|lI]\s*5\d*", text)
+        if m2:
+            return int(m2.group(1))
+    except Exception:
+        pass
+    return None
 
 class QuotaManager:
     """
@@ -123,10 +164,28 @@ class QuotaManager:
             data["last_updated"] = datetime.now().isoformat()
             self._save(data)
 
+    def update_from_screen(self, instance_name: str, remaining: int, total: int = 500):
+        """
+        Updates the quota status directly from the in-game header display (REMAINING / TOTAL).
+        Provides ground truth synchronization with the game client.
+        """
+        with _QUOTA_LOCK:
+            data = self._load()
+            if instance_name not in data.get("instances", {}):
+                data.setdefault("instances", {})[instance_name] = {}
+            inst_info = data["instances"][instance_name]
+            inst_info["remaining_searches"] = max(0, min(total, remaining))
+            inst_info["consumed_searches"] = max(0, total - inst_info["remaining_searches"])
+            data["last_updated"] = datetime.now().isoformat()
+            self._save(data)
+
     def can_search(self, instance_name: Optional[str] = None, required: int = 1) -> bool:
         data = self._load()
         target = instance_name or data.get("active_instance", self.known_instances[0])
         inst_info = data.get("instances", {}).get(target, {})
+        remaining = inst_info.get("remaining_searches")
+        if remaining is not None:
+            return remaining >= required
         consumed = inst_info.get("consumed_searches", 0)
         return consumed + required <= self.limit
 
@@ -140,8 +199,9 @@ class QuotaManager:
             }
         
         inst_info = data["instances"][target]
-        inst_info["consumed_searches"] += count
-        inst_info["remaining_searches"] = max(0, self.limit - inst_info["consumed_searches"])
+        inst_info["consumed_searches"] = inst_info.get("consumed_searches", 0) + count
+        current_rem = inst_info.get("remaining_searches", self.limit)
+        inst_info["remaining_searches"] = max(0, current_rem - count)
         data["last_updated"] = datetime.now().isoformat()
         self._save(data)
 

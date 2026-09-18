@@ -1,0 +1,723 @@
+import io
+import os
+import json
+import math
+import sqlite3
+import calendar
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Tuple, List, Dict
+from PIL import Image, ImageDraw, ImageFont
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DB_PATH = PROJECT_ROOT / "data" / "market.db"
+FONTS_DIR = PROJECT_ROOT / "assets" / "fonts"
+
+FONT_GS_PATH = FONTS_DIR / "GoogleSans.ttf"
+FONT_NOTO_PATH = FONTS_DIR / "NotoSansTC-Medium.ttf"
+
+# Font Cache to maximize API throughput (~25ms rendering)
+_FONT_CACHE: Dict[Tuple[str, int, str], ImageFont.FreeTypeFont] = {}
+
+def get_font_gs(size: int, weight: str = "Bold") -> ImageFont.FreeTypeFont:
+    key = ("gs", size, weight)
+    if key not in _FONT_CACHE:
+        f = ImageFont.truetype(str(FONT_GS_PATH), size)
+        try:
+            f.set_variation_by_name(weight)
+        except Exception:
+            pass
+        _FONT_CACHE[key] = f
+    return _FONT_CACHE[key]
+
+def get_font_noto(size: int) -> ImageFont.FreeTypeFont:
+    key = ("noto", size, "Medium")
+    if key not in _FONT_CACHE:
+        _FONT_CACHE[key] = ImageFont.truetype(str(FONT_NOTO_PATH), size)
+    return _FONT_CACHE[key]
+
+def classify_item_type(name: str) -> str:
+    if any(k in name for k in ['藥水']):
+        return '消耗道具'
+    if any(k in name for k in ['楓葉祝福', '挑釁', '技能書', '母書']):
+        return '技能書'
+    if any(k in name for k in ['喇叭', '瞬移', '背包', '護身符', '初始化', '加持器', '漫天花雨', '飄雪結晶']):
+        return '商城道具'
+    if any(k in name for k in ['墜飾', '眼部', '臉部', '耳環', '戒指', '腰帶']):
+        return '飾品卷軸'
+    if any(k in name for k in ['拳套', '弓', '弩', '單手劍', '雙手劍', '矛', '槍', '短劍', '手套攻擊', '指虎', '火槍', '短杖', '長杖']):
+        return '武器卷軸'
+    if any(k in name for k in ['頭盔', '鞋子', '手套']):
+        return '防具卷軸'
+    if any(k in name for k in ['碎片', '母礦', '水晶']):
+        return '鍛造材料'
+    return '市場道具'
+
+def get_item_last_updated(item_name: str) -> str:
+    """
+    Retrieves the last_updated timestamp for the item from items_watchlist.json.
+    Falls back to current time if not found.
+    """
+    wl_path = PROJECT_ROOT / "items_watchlist.json"
+    if wl_path.exists():
+        try:
+            with open(wl_path, "r", encoding="utf-8") as f:
+                wl = json.load(f)
+                if item_name in wl and "last_updated" in wl[item_name]:
+                    return str(wl[item_name]["last_updated"])
+        except Exception:
+            pass
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+def format_price_cjk(num: Optional[float]) -> str:
+    if num is None:
+        return "-"
+    if abs(num) >= 100_000_000:
+        v = num / 100_000_000
+        formatted = f"{v:.2f}".rstrip('0').rstrip('.')
+        return f"{formatted} 億"
+    elif abs(num) >= 10_000:
+        v = num / 10_000
+        return f"{v:.1f} 萬"
+    return f"{int(num):,}"
+
+def format_axis_price(val: float, is_badge: bool = False) -> str:
+    """
+    Formats price numbers into concise Chinese financial units (億 / 萬) for the Y-axis.
+    - 億 unit: allows decimal digits (e.g. 2.1 億, 2.2 億, 4.59 億, 4 億).
+    - 萬 unit:
+        - Y-axis grid ticks: perfect round numbers, NO decimals (e.g. 300 萬, 280 萬, 260 萬).
+        - Orange match line badge: allows 1 digit after decimal point (e.g. 270.0 萬, 276.7 萬).
+    """
+    if abs(val) >= 100_000_000:
+        v = val / 100_000_000
+        # Allow decimal digits for 億 (e.g. 2.1 億, 2.2 億, 4.59 億, 4 億)
+        formatted = f"{v:.2f}".rstrip('0').rstrip('.')
+        return f"{formatted} 億"
+    elif abs(val) >= 10_000:
+        v = val / 10_000
+        if not is_badge:
+            # Y-axis ticks for 萬 are perfect round numbers: NO decimals
+            return f"{int(round(v))} 萬"
+        else:
+            # Orange match line for 萬: allows 1 digit after decimal point
+            return f"{v:.1f} 萬"
+    return f"{int(val):,}"
+
+def format_vol_cjk(num: Optional[float]) -> str:
+    if num is None or num == 0:
+        return "0 件"
+    return f"{int(num):,} 件"
+
+def calc_nice_ticks(p_min: float, p_max: float, target_ticks: int = 5) -> Tuple[List[int], float, float]:
+    """
+    Calculates clean, rounded financial round numbers for the price y-axis (e.g. 2,000,000, 200,000).
+    """
+    raw_range = p_max - p_min
+    if raw_range <= 0:
+        val = int(p_min)
+        return [val], float(val - 1), float(val + 1)
+    
+    raw_step = raw_range / target_ticks
+    exponent = math.floor(math.log10(raw_step))
+    fraction = raw_step / (10 ** exponent)
+    
+    if fraction < 1.4:
+        nice_mult = 1
+    elif fraction < 3.0:
+        nice_mult = 2
+    elif fraction < 7.0:
+        nice_mult = 5
+    else:
+        nice_mult = 10
+        
+    step = nice_mult * (10 ** exponent)
+    nice_min = math.floor(p_min / step) * step
+    nice_max = math.ceil(p_max / step) * step
+    
+    ticks = []
+    curr = nice_min
+    while curr <= nice_max + step * 0.001:
+        ticks.append(int(curr) if step >= 1 else round(curr, 2))
+        curr += step
+    return ticks, float(nice_min), float(nice_max)
+
+def get_kline_data(item_name: str, timeframe: str = "1h", limit: int = 36, db_path: Optional[Path] = None) -> Tuple[List[Dict], Optional[int]]:
+    active_db = db_path or DB_PATH
+    with sqlite3.connect(active_db) as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT bucket_time, open_price, high_price, low_price, close_price, volume, turnover, vwap, trade_count
+            FROM kline_candles
+            WHERE item_name = ? AND timeframe = ?
+            ORDER BY bucket_time ASC
+        """, (item_name, timeframe))
+        rows = c.fetchall()
+
+        c.execute("""
+            SELECT min(unit_price) FROM active_listings
+            WHERE item_name = ? AND unit_price >= 500
+              AND replace(captured_at, 'T', ' ') >= (
+                  SELECT datetime(replace(max(captured_at), 'T', ' '), '-30 minutes')
+                  FROM active_listings WHERE item_name = ?
+              )
+        """, (item_name, item_name))
+        ask_row = c.fetchone()
+        lowest_ask = ask_row[0] if ask_row and ask_row[0] else None
+
+    candles = []
+    seen = set()
+    for r in rows:
+        t_str = r[0]
+        if t_str in seen:
+            continue
+        seen.add(t_str)
+        candles.append({
+            "time": t_str,
+            "open": r[1],
+            "high": r[2],
+            "low": r[3],
+            "close": r[4],
+            "volume": r[5],
+            "turnover": r[6],
+            "vwap": r[7],
+            "trades": r[8] if len(r) > 8 else 0
+        })
+
+    return candles[-limit:], lowest_ask
+
+def draw_text_mixed(
+    draw: ImageDraw.ImageDraw,
+    xy: Tuple[float, float],
+    text: str,
+    font_latin: ImageFont.FreeTypeFont,
+    font_cjk: ImageFont.FreeTypeFont,
+    fill: Tuple[int, int, int],
+    use_baseline: bool = True
+) -> float:
+    x, y = xy
+    orig_x = x
+    anchor = "ls" if use_baseline else "lt"
+    for ch in text:
+        is_cjk = ord(ch) > 0x2E80
+        f = font_cjk if is_cjk else font_latin
+        draw.text((x, y), ch, font=f, fill=fill, anchor=anchor)
+        x += draw.textlength(ch, font=f)
+    return x - orig_x
+
+def measure_text_mixed(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font_latin: ImageFont.FreeTypeFont,
+    font_cjk: ImageFont.FreeTypeFont
+) -> float:
+    total_w = 0.0
+    for ch in text:
+        is_cjk = ord(ch) > 0x2E80
+        f = font_cjk if is_cjk else font_latin
+        total_w += draw.textlength(ch, font=f)
+    return total_w
+
+def draw_smooth_bubble(
+    img: Image.Image,
+    box: Tuple[float, float, float, float],
+    radius: int,
+    fill: Optional[Tuple[int, int, int, int]] = None,
+    outline: Optional[Tuple[int, int, int, int]] = None,
+    outline_w: int = 1,
+    text: str = "",
+    font_latin: Optional[ImageFont.FreeTypeFont] = None,
+    font_cjk: Optional[ImageFont.FreeTypeFont] = None,
+    text_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
+) -> None:
+    """
+    Renders a silky-smooth anti-aliased rounded rectangle with mathematically centered text.
+    Uses 4x supersampled Lanczos filtering for beautiful corners matching dashboard styling,
+    and pixel-perfect alpha bounding-box centering for all Latin and CJK typography.
+    """
+    bx1, by1, bx2, by2 = [int(round(v)) for v in box]
+    w = bx2 - bx1
+    h = by2 - by1
+    if w <= 0 or h <= 0:
+        return
+
+    # 4x supersampling for ultra-smooth anti-aliased borders
+    scale = 4
+    sw, sh = w * scale, h * scale
+    sr = radius * scale
+    swidth = outline_w * scale
+
+    bubble = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+    if fill:
+        mask = Image.new("L", (sw, sh), 0)
+        mdr = ImageDraw.Draw(mask)
+        mdr.rounded_rectangle((0, 0, sw, sh), radius=sr, fill=255)
+        mask = mask.resize((w, h), Image.Resampling.LANCZOS)
+        fill_layer = Image.new("RGBA", (w, h), fill)
+        bubble.paste(fill_layer, (0, 0), mask)
+
+    if outline and outline_w > 0:
+        mask_out = Image.new("L", (sw, sh), 0)
+        mdr_out = ImageDraw.Draw(mask_out)
+        mdr_out.rounded_rectangle((0, 0, sw, sh), radius=sr, outline=255, width=swidth)
+        mask_out = mask_out.resize((w, h), Image.Resampling.LANCZOS)
+        out_layer = Image.new("RGBA", (w, h), outline)
+        bubble.paste(out_layer, (0, 0), mask_out)
+
+    img.paste(bubble, (bx1, by1), bubble)
+
+    # Pixel-perfect mathematical text centering
+    if text and font_latin and font_cjk:
+        scratch = Image.new("RGBA", (max(w * 2, 600), max(h * 2, 200)), (0, 0, 0, 0))
+        sdr = ImageDraw.Draw(scratch)
+        draw_text_mixed(sdr, (30, 90), text, font_latin, font_cjk, text_color, use_baseline=True)
+        bbox = scratch.getbbox()
+        if bbox:
+            ink = scratch.crop(bbox)
+            iw, ih = ink.size
+            px = bx1 + int(round((w - iw) / 2.0))
+            py = by1 + int(round((h - ih) / 2.0))
+            img.paste(ink, (px, py), ink)
+
+def generate_kline_plot(
+    item_name: str,
+    timeframe: str = "1h",
+    width: int = 1800,
+    height: int = 2400,
+    output_path: Optional[str] = None,
+    db_path: Optional[Path] = None
+) -> Image.Image:
+    """
+    Renders an ultra-high-resolution 3:4 portrait (default 1800x2400) financial candlestick chart
+    with silky-smooth anti-aliased tab borders, optical text centering, and Google Sans typography.
+    """
+    candles, lowest_ask = get_kline_data(item_name, timeframe=timeframe, limit=36, db_path=db_path)
+    if not candles:
+        raise ValueError(f"No candlestick data available for '{item_name}' on timeframe '{timeframe}'.")
+
+    # Scaling ratio relative to baseline 1200x1600 layout
+    sx = width / 1200.0
+    sy = height / 1600.0
+
+    # ==========================================
+    # High-Legibility Professional Type Hierarchy
+    # ==========================================
+    font_price = get_font_gs(round(72 * sx), "Bold")
+    font_title_latin = get_font_gs(round(44 * sx), "Bold")
+    font_title_cjk = get_font_noto(round(42 * sx))
+
+    font_badge_latin = get_font_gs(round(24 * sx), "Bold")
+    font_badge_cjk = get_font_noto(round(22 * sx))
+
+    font_metric_val = get_font_gs(round(30 * sx), "Bold")
+    font_metric_cjk_val = get_font_noto(round(28 * sx))
+    font_metric_lbl = get_font_noto(round(19 * sx))
+
+    font_toolbar_lbl = get_font_gs(round(22 * sx), "Bold")
+    font_toolbar_cjk = get_font_noto(round(21 * sx))
+
+    font_axis = get_font_gs(round(29 * sx), "Bold")
+    font_axis_cjk = get_font_noto(round(28 * sx))
+    font_axis_time = get_font_gs(round(22 * sx), "Bold")
+
+    font_footer_reg = get_font_gs(round(20 * sx), "Regular")
+    font_footer_bold = get_font_gs(round(20 * sx), "Bold")
+
+    # Color Palette (Dark Theme)
+    C_BG = (11, 14, 20, 255)             # #0b0e14 Deep Canvas
+    C_CARD = (18, 22, 30, 255)           # #12161e Card Background
+    C_CARD_SUB = (24, 28, 38, 255)       # #181c26 Sub-card
+    C_BORDER = (38, 44, 56, 255)         # #262c38 Primary Border
+    C_GRID = (25, 30, 42, 255)           # #191e2a Grid Lines
+    C_AXIS_BG = (14, 18, 25, 255)        # #0e1219 Right Axis Strip
+
+    C_TEXT_MAIN = (240, 242, 245, 255)   # #f0f2f5 Primary White
+    C_TEXT_SUB = (140, 150, 166, 255)    # #8c96a6 Secondary Grey
+    C_TEXT_DIM = (105, 115, 130, 255)    # #697382 Dim Muted
+
+    C_UP = (14, 203, 129, 255)           # #0ecb81 Bullish Green
+    C_DOWN = (246, 70, 93, 255)          # #f6465d Bearish Red
+    C_GOLD = (240, 185, 11, 255)         # #f0b90b MA(7)
+    C_BLUE = (41, 98, 255, 255)          # #2962ff MA(25)
+    C_ASK = (255, 152, 0, 255)           # #ff9800 Lowest Ask
+
+    # RGBA image for flawless anti-aliased layer composite
+    img = Image.new("RGBA", (width, height), C_BG)
+    draw = ImageDraw.Draw(img)
+
+    # ==========================================
+    # 1. Executive Summary Header Card
+    # ==========================================
+    header_h = round(300 * sy)
+    draw.rectangle([(0, 0), (width, header_h)], fill=C_CARD)
+    draw.line([(0, header_h), (width, header_h)], fill=C_BORDER, width=max(1, round(1 * sy)))
+
+    # Row 1 (Title + Category Pill + Timeframe Tabs)
+    title_baseline = round(58 * sy)
+    margin_x = round(36 * sx)
+    title_w = draw_text_mixed(draw, (margin_x, title_baseline), item_name, font_title_latin, font_title_cjk, C_TEXT_MAIN[:3], use_baseline=True)
+
+    # Item Category Pill (Smooth rounded anti-aliased)
+    cat_name = classify_item_type(item_name)
+    cat_w = draw.textlength(cat_name, font=font_badge_cjk)
+    cat_x = margin_x + title_w + round(18 * sx)
+    cat_box = (cat_x, round(22 * sy), cat_x + cat_w + round(26 * sx), round(64 * sy))
+    draw_smooth_bubble(
+        img, cat_box, radius=round(8 * sx),
+        fill=(28, 34, 46, 255), outline=C_BORDER, outline_w=1,
+        text=cat_name, font_latin=font_badge_latin, font_cjk=font_badge_cjk,
+        text_color=C_TEXT_SUB
+    )
+
+    # Timeframe Tab Selector (Right-aligned, silky-smooth borders)
+    tf_tabs = [("1小時", "1h"), ("4小時", "4h"), ("日線", "1d")]
+    tab_x = width - margin_x
+    for label, tf_key in reversed(tf_tabs):
+        is_active = (tf_key == timeframe)
+        t_w = draw.textlength(label, font=font_badge_cjk)
+        btn_w = t_w + round(32 * sx)
+        tab_x -= btn_w
+        tab_box = (tab_x, round(22 * sy), tab_x + btn_w, round(64 * sy))
+        if is_active:
+            draw_smooth_bubble(
+                img, tab_box, radius=round(8 * sx),
+                fill=(38, 48, 68, 255), outline=C_GOLD, outline_w=max(1, round(1.5 * sx)),
+                text=label, font_latin=font_badge_latin, font_cjk=font_badge_cjk,
+                text_color=C_GOLD
+            )
+        else:
+            draw_smooth_bubble(
+                img, tab_box, radius=round(8 * sx),
+                fill=C_CARD_SUB, outline=C_BORDER, outline_w=1,
+                text=label, font_latin=font_badge_latin, font_cjk=font_badge_cjk,
+                text_color=C_TEXT_DIM
+            )
+        tab_x -= round(12 * sx)
+
+    # Row 2: Hero Price + Change Pill + Lowest Ask Pill
+    latest_close = candles[-1]["close"]
+    first_open = candles[0]["open"]
+    chg_pct = ((latest_close - first_open) / first_open * 100) if first_open else 0.0
+    c_chg = C_UP if chg_pct >= 0 else C_DOWN
+    chg_sign = "+" if chg_pct >= 0 else ""
+
+    price_str = f"{latest_close:,}"
+    price_baseline = round(148 * sy)
+    draw.text((margin_x, price_baseline), price_str, font=font_price, fill=C_TEXT_MAIN[:3], anchor="ls")
+    price_w = draw.textlength(price_str, font=font_price)
+
+    # 24H Change Pill
+    chg_str = f"{chg_sign}{chg_pct:.2f}%"
+    chg_w = draw.textlength(chg_str, font=font_badge_latin)
+    pill_x = margin_x + price_w + round(20 * sx)
+    pill_box = (pill_x, round(102 * sy), pill_x + chg_w + round(26 * sx), round(152 * sy))
+    draw_smooth_bubble(
+        img, pill_box, radius=round(8 * sx),
+        fill=(c_chg[0]//6, c_chg[1]//6, c_chg[2]//6, 255),
+        text=chg_str, font_latin=font_badge_latin, font_cjk=font_badge_cjk,
+        text_color=c_chg
+    )
+
+    # Lowest Ask Pill (Right-aligned, silky smooth)
+    if lowest_ask:
+        ask_val_str = f"{lowest_ask:,}"
+        ask_full = f"即時最低賣價  {ask_val_str}"
+        ask_w = measure_text_mixed(draw, ask_full, font_badge_latin, font_badge_cjk)
+        ask_box_x = width - ask_w - round(56 * sx)
+        ask_box = (ask_box_x, round(102 * sy), width - margin_x, round(152 * sy))
+        draw_smooth_bubble(
+            img, ask_box, radius=round(8 * sx),
+            fill=(42, 28, 10, 255), outline=C_ASK, outline_w=1,
+            text=ask_full, font_latin=font_badge_latin, font_cjk=font_badge_cjk,
+            text_color=C_ASK
+        )
+
+    # Row 3: 5-Column Financial Metrics Ribbon
+    high_all = max(c["high"] for c in candles)
+    low_all = min(c["low"] for c in candles)
+    vol_all = sum(c["volume"] for c in candles)
+    turnover_all = sum(c["turnover"] for c in candles)
+    vwap_latest = candles[-1]["vwap"] or latest_close
+
+    metrics = [
+        ("24小時最高", f"{high_all:,}"),
+        ("24小時最低", f"{low_all:,}"),
+        ("24小時成交量", format_vol_cjk(vol_all)),
+        ("24小時成交額", format_price_cjk(turnover_all)),
+        ("加權均價 (VWAP)", f"{vwap_latest:,}"),
+    ]
+
+    col_spacing = (width - margin_x * 2) // len(metrics)
+    for idx, (lbl, val) in enumerate(metrics):
+        mx = margin_x + idx * col_spacing
+        draw.text((mx, round(195 * sy)), lbl, font=font_metric_lbl, fill=C_TEXT_SUB[:3])
+        draw_text_mixed(draw, (mx, round(266 * sy)), val, font_metric_val, font_metric_cjk_val, C_TEXT_MAIN[:3], use_baseline=True)
+
+    # ==========================================
+    # 2. Indicator Toolbar Strip
+    # ==========================================
+    bar_y1 = round(300 * sy)
+    bar_y2 = round(365 * sy)
+    draw.rectangle([(0, bar_y1), (width, bar_y2)], fill=C_CARD_SUB)
+    draw.line([(0, bar_y2), (width, bar_y2)], fill=C_BORDER, width=1)
+
+    # Calculate Moving Averages
+    closes = [c["close"] for c in candles]
+    def calc_ma(period):
+        res = []
+        for i in range(len(closes)):
+            if i < period - 1:
+                res.append(None)
+            else:
+                res.append(sum(closes[i - period + 1 : i + 1]) / period)
+        return res
+
+    ma7 = calc_ma(7)
+    ma25 = calc_ma(25)
+
+    ind_x = margin_x
+    mid_ind_y = (bar_y1 + bar_y2) // 2
+    dot_r = round(6 * sx)
+
+    # MA7 Dot & Text
+    draw.ellipse([(ind_x, mid_ind_y - dot_r), (ind_x + dot_r * 2, mid_ind_y + dot_r)], fill=C_GOLD[:3])
+    ma7_txt = f"MA(7): {ma7[-1]:,.0f}" if ma7[-1] else "MA(7): -"
+    draw.text((ind_x + dot_r * 2 + round(10 * sx), round(320 * sy)), ma7_txt, font=font_toolbar_lbl, fill=C_GOLD[:3])
+    ind_x += draw.textlength(ma7_txt, font=font_toolbar_lbl) + round(60 * sx)
+
+    # MA25 Dot & Text
+    draw.ellipse([(ind_x, mid_ind_y - dot_r), (ind_x + dot_r * 2, mid_ind_y + dot_r)], fill=C_BLUE[:3])
+    ma25_txt = f"MA(25): {ma25[-1]:,.0f}" if ma25[-1] else "MA(25): -"
+    draw.text((ind_x + dot_r * 2 + round(10 * sx), round(320 * sy)), ma25_txt, font=font_toolbar_lbl, fill=C_BLUE[:3])
+
+    # ==========================================
+    # 3. Main Candlestick Chart Area
+    # ==========================================
+    margin_left = margin_x
+    axis_width = round(145 * sx)
+    margin_right = axis_width
+    chart_top = round(385 * sy)
+    chart_bottom = round(1260 * sy)
+    vol_top = round(1305 * sy)
+    vol_bottom = round(1450 * sy)
+
+    chart_w = width - margin_left - margin_right
+    chart_h = chart_bottom - chart_top
+    vol_h = vol_bottom - vol_top
+
+    # Right Axis Background Strip
+    draw.rectangle([(width - axis_width, bar_y2), (width, round(1530 * sy))], fill=C_AXIS_BG)
+    draw.line([(width - axis_width, bar_y2), (width - axis_width, round(1530 * sy))], fill=C_BORDER, width=1)
+
+    # Vertical Bounds with Nice Numbers
+    raw_min = low_all * 0.985
+    raw_max = high_all * 1.015
+    if lowest_ask:
+        raw_min = min(raw_min, lowest_ask * 0.99)
+        raw_max = max(raw_max, lowest_ask * 1.01)
+
+    nice_ticks, price_min, price_max = calc_nice_ticks(raw_min, raw_max, target_ticks=5)
+    price_range = price_max - price_min if price_max > price_min else 1.0
+
+    def y_price(p):
+        return chart_bottom - ((p - price_min) / price_range) * chart_h
+
+    ask_y = y_price(lowest_ask) if lowest_ask else -999
+
+    # Horizontal Price Grid Lines & Labels
+    axis_text_right = width - round(16 * sx)
+    for g_val in nice_ticks:
+        gy = y_price(g_val)
+        draw.line([(margin_left, gy), (width - margin_right, gy)], fill=C_GRID[:3], width=1)
+
+        # Avoid label collision with Lowest Ask badge
+        if lowest_ask and price_min <= lowest_ask <= price_max and abs(gy - ask_y) < round(38 * sy):
+            continue
+        g_lbl = format_axis_price(g_val)
+        lbl_w = measure_text_mixed(draw, g_lbl, font_axis, font_axis_cjk)
+        draw_text_mixed(draw, (axis_text_right - lbl_w, gy + round(10 * sy)), g_lbl, font_axis, font_axis_cjk, C_TEXT_SUB[:3], use_baseline=True)
+
+    # Lowest Ask Reference Line across chart
+    if lowest_ask and price_min <= lowest_ask <= price_max:
+        badge_x1 = width - margin_right + round(4 * sx)
+        badge_x2 = width - round(6 * sx)
+        curr_x = margin_left
+        step_x = round(20 * sx)
+        dash_len = round(10 * sx)
+        while curr_x < badge_x1:
+            draw.line([(curr_x, ask_y), (min(curr_x + dash_len, badge_x1), ask_y)], fill=C_ASK[:3], width=max(1, round(1.5 * sx)))
+            curr_x += step_x
+
+        # Solid Orange Price Badge on Right Axis (smooth & centered)
+        badge_lbl = format_axis_price(lowest_ask, is_badge=True)
+        b_half_h = round(24 * sy)
+        badge_box = (badge_x1, ask_y - b_half_h, badge_x2, ask_y + b_half_h)
+        draw_smooth_bubble(
+            img, badge_box, radius=round(7 * sx),
+            fill=C_ASK,
+            text=badge_lbl, font_latin=font_axis, font_cjk=font_axis_cjk,
+            text_color=(20, 10, 0, 255)
+        )
+
+    # Candles & Volume Bars
+    n = len(candles)
+    col_w = chart_w / n
+    body_w = max(8, int(col_w * 0.70))
+    wick_w = max(2, round(2 * sx))
+    max_vol = max((c["volume"] for c in candles), default=1)
+    if max_vol == 0:
+        max_vol = 1
+
+    cand_centers = []
+    for idx, c in enumerate(candles):
+        cx = margin_left + (idx + 0.5) * col_w
+        cand_centers.append(cx)
+
+        o = c["open"]
+        h = c["high"]
+        l = c["low"]
+        cl = c["close"]
+        v = c["volume"]
+
+        is_up = cl >= o
+        c_bar = C_UP[:3] if is_up else C_DOWN[:3]
+
+        # Wick Line
+        hy = y_price(h)
+        ly = y_price(l)
+        draw.line([(cx, hy), (cx, ly)], fill=c_bar, width=wick_w)
+
+        # Body Rectangle
+        oy = y_price(o)
+        cly = y_price(cl)
+        top_y = min(oy, cly)
+        bot_y = max(oy, cly)
+        if bot_y - top_y < 2:
+            bot_y = top_y + 2
+
+        bx1 = cx - body_w // 2
+        bx2 = cx + body_w // 2
+        draw.rectangle([(bx1, top_y), (bx2, bot_y)], fill=c_bar)
+
+        # Volume Bar
+        vh_px = (v / max_vol) * (vol_h - round(32 * sy))
+        vy1 = vol_bottom - vh_px
+        vy2 = vol_bottom
+        draw.rectangle([(bx1, vy1), (bx2, vy2)], fill=c_bar)
+
+    # Moving Average Lines
+    for ma_vals, ma_col in [(ma7, C_GOLD[:3]), (ma25, C_BLUE[:3])]:
+        pts = [(cand_centers[i], y_price(v)) for i, v in enumerate(ma_vals) if v is not None]
+        if len(pts) > 1:
+            for p1, p2 in zip(pts[:-1], pts[1:]):
+                draw.line([p1, p2], fill=ma_col, width=max(2, round(3 * sx)))
+
+    # ==========================================
+    # 4. Volume Sub-chart Toolbar & Separator
+    # ==========================================
+    vol_sep_y = vol_top - round(15 * sy)
+    draw.line([(0, vol_sep_y), (width, vol_sep_y)], fill=C_BORDER[:3], width=1)
+    vol_lbl = f"成交量 (Volume)  {candles[-1]['volume']:,}"
+    draw_text_mixed(draw, (margin_left, vol_top + round(16 * sy)), vol_lbl, font_toolbar_lbl, font_toolbar_cjk, C_TEXT_SUB[:3], use_baseline=True)
+    vol_max_str = f"{int(max_vol):,}"
+    vol_w = draw.textlength(vol_max_str, font=font_axis)
+    draw.text((axis_text_right - vol_w, vol_top - round(4 * sy)), vol_max_str, font=font_axis, fill=C_TEXT_DIM[:3])
+    draw.text((axis_text_right - draw.textlength("0", font=font_axis), vol_bottom - round(24 * sy)), "0", font=font_axis, fill=C_TEXT_DIM[:3])
+
+    # ==========================================
+    # 5. Bottom Time Axis
+    # ==========================================
+    time_sep_y = vol_bottom + round(10 * sy)
+    draw.line([(0, time_sep_y), (width, time_sep_y)], fill=C_BORDER[:3], width=1)
+    target_ticks = 5
+    if n <= target_ticks:
+        indices = list(range(n))
+    else:
+        indices = sorted(list(set(int(round(i * (n - 1) / (target_ticks - 1))) for i in range(target_ticks))))
+
+    for i_pos, idx in enumerate(indices):
+        cx = cand_centers[idx]
+        t_raw = candles[idx]["time"]
+        try:
+            dt = datetime.strptime(t_raw, "%Y-%m-%d %H:%M:%S")
+            t_label = dt.strftime("%m/%d %H:%M") if timeframe in ("1h", "4h") else dt.strftime("%Y/%m/%d")
+        except Exception:
+            t_label = t_raw[-8:]
+        lbl_w = draw.textlength(t_label, font=font_axis_time)
+
+        # Clamp to chart boundaries
+        if i_pos == 0:
+            tx = margin_left
+        elif i_pos == len(indices) - 1:
+            tx = width - margin_right - lbl_w
+        else:
+            tx = cx - lbl_w / 2
+            if tx < margin_left + round(10 * sx):
+                tx = margin_left + round(10 * sx)
+            elif tx + lbl_w > width - margin_right - round(10 * sx):
+                tx = width - margin_right - lbl_w - round(10 * sx)
+
+        draw.text((tx, vol_bottom + round(22 * sy)), t_label, font=font_axis_time, fill=C_TEXT_SUB[:3])
+
+    # ==========================================
+    # 6. Full-Width Footer Strip
+    # ==========================================
+    footer_top = round(1535 * sy)
+    draw.rectangle([(0, footer_top), (width, height)], fill=C_CARD)
+    draw.line([(0, footer_top), (width, footer_top)], fill=C_BORDER[:3], width=1)
+
+    mid_footer_y = footer_top + (height - footer_top) // 2
+    baseline_y = footer_top + round(39 * sy)
+
+    # Status Dot (Emerald Green)
+    dot_cx = margin_left + round(6 * sx)
+    dot_radius = round(6 * sx)
+    draw.ellipse([(dot_cx - dot_radius, mid_footer_y - dot_radius), (dot_cx + dot_radius, mid_footer_y + dot_radius)], fill=C_UP[:3])
+
+    # Left: Last Updated: timestamp from items_watchlist.json
+    cur_x = dot_cx + round(18 * sx)
+    draw.text((cur_x, baseline_y), "Last Updated: ", font=font_footer_reg, fill=C_TEXT_SUB[:3], anchor="ls")
+    cur_x += draw.textlength("Last Updated: ", font=font_footer_reg)
+    ts_str = get_item_last_updated(item_name)
+    draw.text((cur_x, baseline_y), ts_str, font=font_footer_bold, fill=C_TEXT_MAIN[:3], anchor="ls")
+
+    # Right: © 2026 By G8G
+    c_prefix = f"© {datetime.now().year} By "
+    c_author = "G8G"
+    w_prefix = draw.textlength(c_prefix, font=font_footer_reg)
+    w_author = draw.textlength(c_author, font=font_footer_bold)
+    rx = width - margin_left - w_prefix - w_author
+
+    draw.text((rx, baseline_y), c_prefix, font=font_footer_reg, fill=C_TEXT_SUB[:3], anchor="ls")
+    draw.text((rx + w_prefix, baseline_y), c_author, font=font_footer_bold, fill=C_TEXT_MAIN[:3], anchor="ls")
+
+    # Convert to RGB
+    final_img = img.convert("RGB")
+
+    if output_path:
+        os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        final_img.save(output_path, format="PNG", optimize=True)
+
+    return final_img
+
+def generate_kline_plot_bytes(
+    item_name: str,
+    timeframe: str = "1h",
+    width: int = 1800,
+    height: int = 2400,
+    db_path: Optional[Path] = None
+) -> bytes:
+    """
+    Generates PNG image bytes in memory without disk I/O, optimized for high-performance HTTP responses.
+    """
+    img = generate_kline_plot(item_name, timeframe=timeframe, width=width, height=height, db_path=db_path)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+if __name__ == "__main__":
+    for item in ["力量水晶", "楓葉祝福 20", "敏捷水晶"]:
+        out = f"scratch/kline_rendered_{item}_1800x2400.png"
+        generate_kline_plot(item, timeframe="1h", width=1800, height=2400, output_path=out)
+        print(f"Generated {out}")

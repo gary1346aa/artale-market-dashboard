@@ -137,8 +137,19 @@ def export_dashboard_data() -> Dict:
             ask_row = cursor.fetchone()
             lowest_ask = ask_row[0] if ask_row and ask_row[0] else None
             data_by_item[item]["lowest_ask"] = lowest_ask
-
             spread_pct = ((lowest_ask - latest_price) / latest_price * 100) if (lowest_ask and latest_price) else None
+
+            data_by_item[item]["summary_24h"] = {
+                "latest_price": latest_price,
+                "vol_24": vol_24,
+                "turnover_24": turnover_24,
+                "trades_24": trades_24,
+                "high_24": high_24,
+                "low_24": low_24,
+                "chg_24": round(chg_24, 2),
+                "lowest_ask": lowest_ask,
+                "spread_pct": round(spread_pct, 1) if spread_pct is not None else None
+            }
 
             summary_list.append({
                 "name": item,
@@ -855,8 +866,92 @@ def generate_dashboard_html():
         }
 
         /* ----------------------------------------------------
-           CANDLESTICK CHART VIEW (#view-chart)
+           SNAPSHOT / MOBILE CARD EXPORT MODE
            ---------------------------------------------------- */
+        body.mobile-card-mode {
+            background-color: #0b0e14;
+            padding: 0;
+            margin: 0;
+            height: 100vh;
+        }
+        body.mobile-card-mode .app-header { display: none !important; }
+        body.mobile-card-mode .btn-back-overview { display: none !important; }
+        body.mobile-card-mode .chart-select-box { display: none !important; }
+        body.mobile-card-mode #view-chart {
+            padding: 14px 16px !important;
+            height: 100% !important;
+            box-sizing: border-box;
+        }
+        body.mobile-card-mode .chart-content {
+            border: none !important;
+            height: 100% !important;
+        }
+        body.mobile-card-mode .chart-control-bar {
+            background: transparent !important;
+            border-bottom: none !important;
+            padding: 6px 0 12px 0 !important;
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            width: 100% !important;
+        }
+        body.mobile-card-mode .chart-control-left {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 12px !important;
+            min-width: 0 !important;
+            flex: 1 !important;
+        }
+        body.mobile-card-mode .chart-control-right {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            width: auto !important;
+            flex-shrink: 0 !important;
+            margin-left: auto !important;
+        }
+        body.mobile-card-mode .chart-active-title {
+            font-size: 24px !important;
+            font-weight: 700 !important;
+        }
+        body.mobile-card-mode .cat-tag {
+            font-size: 15px !important;
+            padding: 4px 10px !important;
+            border-radius: 6px !important;
+        }
+        body.mobile-card-mode .tf-group {
+            background-color: #161a24 !important;
+            border: 1px solid #2a303f !important;
+            border-radius: 8px !important;
+            padding: 3px !important;
+        }
+        body.mobile-card-mode .btn-tf {
+            font-size: 14px !important;
+            padding: 6px 14px !important;
+            border-radius: 6px !important;
+        }
+        body.mobile-card-mode .metric-bar {
+            background-color: #12151e !important;
+            border: 1px solid #1f2430 !important;
+            border-radius: 8px !important;
+            padding: 10px 14px !important;
+            margin-bottom: 8px !important;
+            display: grid !important;
+            grid-template-columns: repeat(5, 1fr) 1.38fr !important;
+            gap: 8px 12px !important;
+        }
+        body.mobile-card-mode .metric-val {
+            font-size: 0.92rem !important;
+        }
+        @media (max-width: 680px) {
+            body.mobile-card-mode .metric-bar {
+                grid-template-columns: repeat(3, 1fr) !important;
+                gap: 8px 10px !important;
+            }
+        }
+
         #view-chart {
             display: none;
             flex-direction: column;
@@ -1828,13 +1923,16 @@ def generate_dashboard_html():
         // ----------------------------------------------------
         // SPA View Switcher
         // ----------------------------------------------------
-        function showOverview() {
+        function showOverview(updateHash = true) {
             document.getElementById("view-overview").style.display = "flex";
             document.getElementById("view-chart").style.display = "none";
-            window.location.hash = "#overview";
+            document.body.classList.remove("mobile-card-mode");
+            if (updateHash && window.location.hash !== "#overview") {
+                window.location.hash = "#overview";
+            }
         }
 
-        function showChart(itemName) {
+        function showChart(itemName, updateHash = true) {
             if (itemName && allData[itemName]) {
                 currentItem = itemName;
                 const sel = document.getElementById("item-selector");
@@ -1843,7 +1941,14 @@ def generate_dashboard_html():
 
             document.getElementById("view-overview").style.display = "none";
             document.getElementById("view-chart").style.display = "flex";
-            window.location.hash = "#chart?item=" + encodeURIComponent(currentItem);
+            if (updateHash) {
+                let h = "#chart?item=" + encodeURIComponent(currentItem);
+                if (currentTf && currentTf !== "1h") h += "&tf=" + currentTf;
+                if (document.body.classList.contains("mobile-card-mode")) h += "&mode=card";
+                if (window.location.hash !== h) {
+                    window.location.hash = h;
+                }
+            }
 
             // Update item info badge in chart header
             const itObj = summaryList.find(s => s.name === currentItem);
@@ -1968,6 +2073,8 @@ def generate_dashboard_html():
             color: '#0ecb81',
             priceFormat: { type: 'volume' },
             priceScaleId: '',
+            lastValueVisible: false,
+            priceLineVisible: false,
         });
 
         volumeSeries.priceScale().applyOptions({
@@ -1991,6 +2098,7 @@ def generate_dashboard_html():
             const itemObj = allData[currentItem];
             const candles = itemObj[currentTf] || [];
             const lowestAsk = itemObj.lowest_ask;
+            const sum24 = itemObj.summary_24h || {};
 
             const cData = candles.map(c => ({
                 time: c.time,
@@ -2019,13 +2127,19 @@ def generate_dashboard_html():
                 valClose.textContent = formatMeso(latest.close);
                 valClose.className = "metric-val " + (latest.close >= latest.open ? "c-up" : "c-down");
                 valVwap.textContent = formatMeso(latest.vwap);
-                valVol.textContent = latest.volume.toLocaleString() + " 件";
+                
+                const vol24 = (sum24.vol_24 !== undefined && sum24.vol_24 !== null) ? sum24.vol_24 : candles.reduce((acc, c) => acc + (c.volume || 0), 0);
+                valVol.textContent = vol24.toLocaleString() + " 件";
 
-                const allHighs = candles.map(c => c.high);
-                const allLows = candles.map(c => c.low);
-                const maxH = Math.max(...allHighs);
-                const minL = Math.min(...allLows);
-                valRange.textContent = formatMeso(maxH) + " / " + formatMeso(minL);
+                if (sum24.high_24 && sum24.low_24) {
+                    valRange.textContent = formatMeso(sum24.high_24) + " / " + formatMeso(sum24.low_24);
+                } else {
+                    const allHighs = candles.map(c => c.high);
+                    const allLows = candles.map(c => c.low);
+                    const maxH = Math.max(...allHighs);
+                    const minL = Math.min(...allLows);
+                    valRange.textContent = formatMeso(maxH) + " / " + formatMeso(minL);
+                }
 
                 if (lowestAsk) {
                     valAsk.textContent = formatMeso(lowestAsk);
@@ -2053,7 +2167,23 @@ def generate_dashboard_html():
 
         // Crosshair move listener
         chart.subscribeCrosshairMove((param) => {
-            if (!param || !param.time || !param.seriesData) return;
+            const itemObj = allData[currentItem];
+            const sum24 = (itemObj && itemObj.summary_24h) ? itemObj.summary_24h : {};
+            const candles = (itemObj && itemObj[currentTf]) ? itemObj[currentTf] : [];
+
+            if (!param || !param.time || !param.seriesData) {
+                if (candles.length > 0) {
+                    const latest = candles[candles.length - 1];
+                    valClose.textContent = formatMeso(latest.close);
+                    valClose.className = "metric-val " + (latest.close >= latest.open ? "c-up" : "c-down");
+                    if (sum24.high_24 && sum24.low_24) {
+                        valRange.textContent = formatMeso(sum24.high_24) + " / " + formatMeso(sum24.low_24);
+                    }
+                    const vol24 = (sum24.vol_24 !== undefined && sum24.vol_24 !== null) ? sum24.vol_24 : candles.reduce((acc, c) => acc + (c.volume || 0), 0);
+                    valVol.textContent = vol24.toLocaleString() + " 件";
+                }
+                return;
+            }
             const cItem = param.seriesData.get(candleSeries);
             const vItem = param.seriesData.get(volumeSeries);
             if (cItem) {
@@ -2076,6 +2206,10 @@ def generate_dashboard_html():
                 btn.classList.add("active");
                 currentTf = btn.getAttribute("data-tf");
                 updateChart();
+                let h = "#chart?item=" + encodeURIComponent(currentItem);
+                if (currentTf !== "1h") h += "&tf=" + currentTf;
+                if (document.body.classList.contains("mobile-card-mode")) h += "&mode=card";
+                history.replaceState(null, "", h);
             });
         });
 
@@ -2161,15 +2295,29 @@ def generate_dashboard_html():
         function handleHashRoute() {
             const hash = window.location.hash;
             if (hash.startsWith("#chart")) {
-                const params = new URLSearchParams(hash.slice(hash.indexOf("?") + 1));
+                const queryStr = hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : "";
+                const params = new URLSearchParams(queryStr);
                 const it = params.get("item");
-                if (it && allData[it]) {
-                    showChart(it);
-                    return;
+                const tf = params.get("tf");
+                const mode = params.get("mode");
+
+                if (mode === "card" || mode === "snapshot") {
+                    document.body.classList.add("mobile-card-mode");
+                } else {
+                    document.body.classList.remove("mobile-card-mode");
                 }
-                showChart(currentItem);
+
+                if (tf && ["1h", "4h", "1d"].includes(tf)) {
+                    currentTf = tf;
+                    document.querySelectorAll(".btn-tf").forEach(b => {
+                        b.classList.toggle("active", b.getAttribute("data-tf") === tf);
+                    });
+                }
+
+                const targetItem = (it && allData[it]) ? it : currentItem;
+                showChart(targetItem, false);
             } else {
-                showOverview();
+                showOverview(false);
             }
         }
 

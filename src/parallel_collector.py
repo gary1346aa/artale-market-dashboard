@@ -58,6 +58,14 @@ class ParallelCollector:
         def worker_thread(device_id: str):
             nonlocal completed_count
             inst_name = DEVICE_TO_INSTANCE.get(device_id, device_id)
+
+            # 1. Pre-boot Quota Check: If instance has no quota left, don't boot or touch the queue
+            from .quota_manager import QuotaManager
+            qm = QuotaManager()
+            if not qm.can_search(inst_name, required=1):
+                logger.warning(f"[{device_id}] Instance '{inst_name}' quota exhausted. Skipping worker.")
+                return
+
             logger.info(f"[{device_id}] Worker booting for instance '{inst_name}'...")
 
             collector = MarketCollector(instance_name=inst_name, use_adb=True, allow_instance_rotation=False)
@@ -78,6 +86,11 @@ class ParallelCollector:
             logger.info(f"[{device_id}] Ready. Draining task queue dynamically...")
             try:
                 while not task_queue.empty():
+                    # 2. In-loop Quota Check: If quota ran out during this batch, stop gracefully
+                    if not collector.quota_mgr.can_search(collector.current_instance, required=1):
+                        logger.warning(f"[{device_id}] Instance '{inst_name}' quota exhausted during run. Worker stopping.")
+                        break
+
                     try:
                         idx, total_total, item = task_queue.get_nowait()
                     except queue.Empty:

@@ -6,7 +6,7 @@ from .window_manager import WindowManager
 from .parser import MarketParser
 from .database import init_db, save_active_listings, save_matched_trades
 from .actions import human_click, human_delay, clear_and_paste, submit_existing_search
-from .quota_manager import QuotaManager
+from .quota_manager import QuotaManager, read_quota_from_frame
 from .aggregator import KlineAggregator
 from .instance_launcher import InstanceLauncher
 from .tier_evaluator import update_item_timestamp, TierEvaluator
@@ -119,15 +119,33 @@ class MarketCollector:
         logger.info(f"Switched successfully to '{instance_name}'.")
         return True
 
+    def sync_quota_from_frame(self, frame=None) -> Optional[int]:
+        """
+        Reads in-game quota header '搜尋次數 XXX/500' and synchronizes quota_manager.
+        In Artale, this counter displays REMAINING / TOTAL searches.
+        """
+        if frame is None:
+            frame = self.capture_frame()
+        if not frame:
+            return None
+        rem = read_quota_from_frame(frame)
+        if rem is not None:
+            self.quota_mgr.update_from_screen(self.current_instance, remaining=rem)
+            logger.info(f"[{self.current_instance}] Ground truth quota synced: {rem}/500 remaining.")
+            return rem
+        return None
+
     def ensure_focus(self, max_retries: int = 3) -> bool:
         if self.use_adb and self.adb:
             for attempt in range(1, max_retries + 1):
                 if self.adb.is_auction_open():
+                    self.sync_quota_from_frame()
                     return True
 
                 logger.info(f"Instance '{self.current_instance}' ({self.adb.device_id}) opening Auction House (attempt {attempt}/{max_retries})...")
                 if self.adb.enter_auction_from_free_market(max_wait_sec=8):
                     logger.info(f"Successfully entered Auction House on '{self.current_instance}'.")
+                    self.sync_quota_from_frame()
                     return True
 
                 if attempt < max_retries:
@@ -150,6 +168,7 @@ class MarketCollector:
             if not self.launcher.ensure_instance_in_auction(self.current_instance):
                 logger.error(f"Could not navigate instance '{self.current_instance}' into Auction House.")
                 return False
+        self.sync_quota_from_frame()
         return True
 
     def leave_auction(self) -> bool:
@@ -551,6 +570,8 @@ class MarketCollector:
                 query_success = True
                 self.quota_mgr.record_search(self.current_instance, count=1)
                 verified_frame = self.ensure_price_sort_ascending()
+                if verified_frame:
+                    self.sync_quota_from_frame(verified_frame)
                 self.paginate_and_scrape(max_pages=max_pages, is_market=False, initial_frame=verified_frame, item_name=keyword)
 
         # 2. Scrape Matched Trades (市價) if requested

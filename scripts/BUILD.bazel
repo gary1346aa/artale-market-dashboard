@@ -1,0 +1,31 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "verify_quota_de_vs_ocr",
+    srcs = ["verify_quota_de_vs_ocr.py"],
+    deps = ["//:artale_market_tracker"],
+    tags = ["manual", "benchmark"],
+)
+
+py_binary(
+    name = "verify_against_golden",
+    srcs = ["verify_against_golden.py"],
+    deps = ["//:artale_market_tracker"],
+    tags = ["manual", "benchmark"],
+)
+
+py_binary(
+    name = "verify_digit_engine_vs_ocr",
+    srcs = ["verify_digit_engine_vs_ocr.py"],
+    deps = ["//:artale_market_tracker"],
+    tags = ["manual", "benchmark"],
+)
+
+py_binary(
+    name = "build_golden_dataset",
+    srcs = ["build_golden_dataset.py"],
+    deps = ["//:artale_market_tracker"],
+    tags = ["manual", "benchmark"],
+)

@@ -13,11 +13,12 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+workspace_env = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+PROJECT_ROOT = Path(workspace_env) if workspace_env else Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.digit_engine import parse_quota_header
+from recognition.digit_engine import parse_quota_header
 
 def ocr_header(frame):
     try:

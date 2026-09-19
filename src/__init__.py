@@ -1,1 +1,0 @@
-# Artale Market Tracker Package

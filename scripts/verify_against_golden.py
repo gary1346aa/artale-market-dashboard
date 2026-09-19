@@ -7,22 +7,27 @@ if sys.platform == "win32":
         pass
 
 import time
+import argparse
 import json
+import os
 from pathlib import Path
-from typing import Dict, List, Any
+import sys
+import time
+from typing import Any, Dict, List
 from PIL import Image
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+workspace_env = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+PROJECT_ROOT = Path(workspace_env) if workspace_env else Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.parser import MarketParser
-from src.digit_engine import parse_price_cell, parse_timestamp_cell
+from recognition.digit_engine import parse_price_cell, parse_timestamp_cell
+from recognition.table_parser import MarketParser
 
 DATASET_DIR = PROJECT_ROOT / "data" / "test_dataset"
 GOLDEN_PATH = PROJECT_ROOT / "data" / "golden_dataset.json"
 
-def verify_against_golden():
+def verify_against_golden(limit: int = 0):
     if not GOLDEN_PATH.exists():
         print(f"Error: Golden dataset not found at {GOLDEN_PATH}")
         sys.exit(1)
@@ -32,13 +37,16 @@ def verify_against_golden():
 
     records = golden_data.get("records", [])
     meta = golden_data.get("metadata", {})
+    if limit > 0:
+        records = records[:limit]
     print(f"=== Running Regression Verification Against Golden Dataset ===")
-    print(f"Golden Standards: {len(records)} rows from {meta.get('total_images')} images")
+    print(f"Golden Standards: {len(records)} rows from {meta.get('total_images')} images (limit: {limit or 'all'})")
 
     t_start = time.time()
     
-    # Cache opened images to avoid redundant I/O for multiple rows in same image
-    img_cache: Dict[str, Image.Image] = {}
+    # Stream opened image for adjacent rows in same image
+    current_fn = None
+    current_img = None
     
     total_checks = len(records)
     passed_checks = 0
@@ -46,26 +54,32 @@ def verify_against_golden():
 
     for idx, rec in enumerate(records, 1):
         fn = rec["file"]
-        if fn not in img_cache:
+        if fn != current_fn:
+            if current_img is not None:
+                try:
+                    current_img.close()
+                except Exception:
+                    pass
             img_path = DATASET_DIR / fn
             try:
-                img_cache[fn] = Image.open(img_path)
+                current_img = Image.open(img_path)
+                current_fn = fn
             except Exception as e:
                 regressions.append({"record": rec, "error": f"Failed to open image: {e}"})
                 continue
 
-        img = img_cache[fn]
+        img = current_img
         parser = MarketParser(img)
         tab = rec["tab"]
         row_idx = rec["row_idx"]
         y1, y2 = parser.ROW_BOUNDS[row_idx]
 
         # 1. Total Price
-        tot_crop = img.crop(parser._scale_box(550, y1, 675, y2))
+        tot_crop = img.crop(parser._scale_box(687, y1, 844, y2))
         curr_tot = parse_price_cell(tot_crop, tab=tab)
 
         # 2. Unit Price
-        unit_crop = img.crop(parser._scale_box(675, y1, 790, y2))
+        unit_crop = img.crop(parser._scale_box(844, y1, 987, y2))
         curr_unit = parse_price_cell(unit_crop, tab=tab)
         if curr_unit is None and curr_tot is not None:
             curr_unit = curr_tot
@@ -73,7 +87,7 @@ def verify_against_golden():
         # 3. Timestamp
         curr_ts = None
         if tab == "market":
-            meta_crop = img.crop(parser._scale_box(822, y1 + 6, 920, y1 + 33))
+            meta_crop = img.crop(parser._scale_box(1027, y1 + 7, 1150, y1 + 41))
             curr_ts = parse_timestamp_cell(meta_crop)
 
         # Compare against golden
@@ -128,4 +142,8 @@ def verify_against_golden():
         print("\nSUCCESS: 100.0% Perfect Match Against Golden Standard. Zero Regressions!\n")
 
 if __name__ == "__main__":
-    verify_against_golden()
+    parser = argparse.ArgumentParser(description="Regression Verification Against Golden Dataset")
+    parser.add_argument("--limit", type=int, default=0, help="Maximum records to verify (default: 0 for all)")
+    args = parser.parse_args()
+    verify_against_golden(limit=args.limit)
+

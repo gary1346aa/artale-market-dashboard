@@ -6,21 +6,24 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-import os
-import re
-import time
+import argparse
 import json
+import os
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+import re
+import sys
+import time
+from typing import Any, Dict, List, Optional
 from PIL import Image
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+workspace_env = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+PROJECT_ROOT = Path(workspace_env) if workspace_env else Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.parser import MarketParser
-from src.digit_engine import parse_price_cell, parse_timestamp_cell
-from src.ocr_engine import ocr_image, extract_number, normalize_item_name
+from recognition.digit_engine import parse_price_cell, parse_timestamp_cell
+from recognition.table_parser import MarketParser
+from recognition.text_ocr import extract_number, normalize_item_name, ocr_image
 DATASET_DIR = PROJECT_ROOT / "data" / "test_dataset"
 REPORT_PATH = PROJECT_ROOT / "data" / "digit_engine_vs_ocr_report.json"
 
@@ -37,7 +40,7 @@ def compare_image(img_path: Path) -> List[Dict[str, Any]]:
 
     for row_idx, (y1, y2) in enumerate(parser.ROW_BOUNDS):
         # 1. Check if row is valid/occupied
-        name_box = parser._scale_box(365, y1 + 4, 555, y2 - 4)
+        name_box = parser._scale_box(456, y1 + 5, 693, y2 - 5)
         name_crop = img.crop(name_box).resize((450, 70), Image.Resampling.LANCZOS)
         raw_name = ocr_image(name_crop, lang="zh-Hant-TW")
         item_name = normalize_item_name(raw_name)
@@ -52,12 +55,12 @@ def compare_image(img_path: Path) -> List[Dict[str, Any]]:
         }
 
         # 2. Total Price Cell
-        tot_crop = img.crop(parser._scale_box(550, y1, 675, y2))
+        tot_crop = img.crop(parser._scale_box(687, y1, 844, y2))
         t0 = time.perf_counter()
         de_tot = parse_price_cell(tot_crop, tab=tab)
         de_tot_time_ms = (time.perf_counter() - t0) * 1000
 
-        tot_ocr_crop = img.crop(parser._scale_box(580, y1, 688, y1 + 26)).resize((350, 70), Image.Resampling.LANCZOS)
+        tot_ocr_crop = img.crop(parser._scale_box(725, y1, 860, y1 + 32)).resize((350, 70), Image.Resampling.LANCZOS)
         t0 = time.perf_counter()
         raw_tot_ocr = ocr_image(tot_ocr_crop, lang="en-US") or ocr_image(tot_ocr_crop, lang="zh-Hant-TW")
         ocr_tot = extract_number(raw_tot_ocr)
@@ -73,12 +76,12 @@ def compare_image(img_path: Path) -> List[Dict[str, Any]]:
         }
 
         # 3. Unit Price Cell
-        unit_crop = img.crop(parser._scale_box(675, y1, 790, y2))
+        unit_crop = img.crop(parser._scale_box(844, y1, 987, y2))
         t0 = time.perf_counter()
         de_unit = parse_price_cell(unit_crop, tab=tab)
         de_unit_time_ms = (time.perf_counter() - t0) * 1000
 
-        unit_ocr_crop = img.crop(parser._scale_box(705, y1, 805, y1 + 26)).resize((350, 70), Image.Resampling.LANCZOS)
+        unit_ocr_crop = img.crop(parser._scale_box(881, y1, 1006, y1 + 32)).resize((350, 70), Image.Resampling.LANCZOS)
         t0 = time.perf_counter()
         raw_unit_ocr = ocr_image(unit_ocr_crop, lang="en-US") or ocr_image(unit_ocr_crop, lang="zh-Hant-TW")
         ocr_unit = extract_number(raw_unit_ocr)
@@ -106,7 +109,7 @@ def compare_image(img_path: Path) -> List[Dict[str, Any]]:
 
         # 4. Timestamp Cell (for market tab)
         if tab == "market":
-            meta_crop = img.crop(parser._scale_box(822, y1 + 6, 920, y1 + 33))
+            meta_crop = img.crop(parser._scale_box(1027, y1 + 7, 1150, y1 + 41))
             t0 = time.perf_counter()
             de_time = parse_timestamp_cell(meta_crop)
             de_time_ms = (time.perf_counter() - t0) * 1000
@@ -140,9 +143,11 @@ def compare_image(img_path: Path) -> List[Dict[str, Any]]:
 
     return results
 
-def run_verification(dataset_dir: Path = DATASET_DIR) -> Dict[str, Any]:
+def run_verification(dataset_dir: Path = DATASET_DIR, limit: int = 20) -> Dict[str, Any]:
     images = sorted(dataset_dir.glob("*.png"))
-    print(f"=== Starting Digit Engine vs OCR Verification on {len(images)} images ===")
+    if limit > 0:
+        images = images[:limit]
+    print(f"=== Starting Digit Engine vs OCR Verification on {len(images)} images (limit: {limit or 'all'}) ===")
 
     all_rows: List[Dict[str, Any]] = []
     t_start = time.time()
@@ -249,4 +254,8 @@ def run_verification(dataset_dir: Path = DATASET_DIR) -> Dict[str, Any]:
     return summary
 
 if __name__ == "__main__":
-    run_verification()
+    parser = argparse.ArgumentParser(description="Digit Engine vs OCR Verification")
+    parser.add_argument("--limit", type=int, default=20, help="Max images to verify (default: 20, 0 for all)")
+    args = parser.parse_args()
+    run_verification(limit=args.limit)
+

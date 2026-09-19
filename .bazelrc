@@ -1,0 +1,2 @@
+build --enable_runfiles
+test --test_output=streamed

@@ -63,7 +63,7 @@ $startMsg | Out-File $logFile -Append -Encoding utf8
 
 if ($Due) {
     try {
-        $pyCmd = "import json; from src.tier_evaluator import get_due_items; due, wait_sec, next_item = get_due_items(); wl = json.load(open('$Watchlist', 'r', encoding='utf-8')); print(json.dumps({'due_count': len(due), 'total_count': len(wl), 'wait_min': round(wait_sec/60, 1), 'next_item': next_item, 'due_items': due}, ensure_ascii=False))"
+        $pyCmd = "import sys; sys.stdout.reconfigure(encoding='utf-8'); import json; from core.watchlist import get_due_items; due, wait_sec, next_item = get_due_items(); wl = json.load(open('$Watchlist', 'r', encoding='utf-8')); print(json.dumps({'due_count': len(due), 'total_count': len(wl), 'wait_min': round(wait_sec/60, 1), 'next_item': next_item, 'due_items': due}, ensure_ascii=False))"
         $dueInfo = & $python -c $pyCmd | ConvertFrom-Json
         $dueCount = $dueInfo.due_count
         $totalCount = $dueInfo.total_count
@@ -102,15 +102,22 @@ if ($Parallel -gt 0) {
 }
 
 if ($Query -ne "") {
-    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs | Tee-Object -FilePath $logFile -Append
+    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
 } else {
-    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs | Tee-Object -FilePath $logFile -Append
+    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+}
+
+if ($LASTEXITCODE -ne 0) {
+    $failMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps."
+    Write-Host $failMsg -ForegroundColor Red
+    $failMsg | Out-File $logFile -Append -Encoding utf8
+    exit $LASTEXITCODE
 }
 
 $aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."
 Write-Host $aggMsg -ForegroundColor Cyan
 $aggMsg | Out-File $logFile -Append -Encoding utf8
-& $python -u -m src.aggregator | Tee-Object -FilePath $logFile -Append
+& $python -u -m storage.aggregator | Tee-Object -FilePath $logFile -Append
 
 $dashMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Updating dashboard.html and docs/index.html..."
 Write-Host $dashMsg -ForegroundColor Cyan

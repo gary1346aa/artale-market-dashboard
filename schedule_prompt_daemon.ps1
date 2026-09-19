@@ -60,7 +60,7 @@ function Show-PromptDialog([string]$promptTimeStr, [int]$timeout = 30) {
     }
 
     try {
-        $cmd = "from src.tier_evaluator import get_due_items; due, _, _ = get_due_items(); print(len(due))"
+        $cmd = "from core.watchlist import get_due_items; due, _, _ = get_due_items(); print(len(due))"
         $res = & $pythonExe -c $cmd
         $dueCount = [int]$res.Trim()
     } catch {
@@ -261,7 +261,7 @@ $nextPrompt = (Get-Date).AddSeconds(-1)
 Write-Log "Initial scan starting immediately. Subsequent runs will align to hourly (:00) schedule."
 
 function Get-DueStatus() {
-    $pyCmd = "import json; from src.tier_evaluator import get_due_items; due, wait_sec, next_item = get_due_items(); wl = json.load(open('items_watchlist.json', 'r', encoding='utf-8')); print(json.dumps({'due_count': len(due), 'total_count': len(wl), 'wait_min': round(wait_sec/60, 1), 'next_item': next_item, 'due_items': due}, ensure_ascii=False))"
+    $pyCmd = "import sys; sys.stdout.reconfigure(encoding='utf-8'); import json; from core.watchlist import get_due_items; due, wait_sec, next_item = get_due_items(); wl = json.load(open('items_watchlist.json', 'r', encoding='utf-8')); print(json.dumps({'due_count': len(due), 'total_count': len(wl), 'wait_min': round(wait_sec/60, 1), 'next_item': next_item, 'due_items': due}, ensure_ascii=False))"
     try {
         $raw = & "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe" -c $pyCmd
         return ($raw | ConvertFrom-Json)
@@ -289,8 +289,12 @@ while ($true) {
                 Write-Log "Watchlist Check: $dueCount of $totalCount item(s) due to update: [$sample]"
                 Write-Log "Starting silent background collection for $dueCount due item(s)..."
                 try {
-                    Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait
-                    Write-Log "Silent collection ($dueCount items) and sync completed successfully!"
+                    $proc = Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait -PassThru
+                    if ($proc.ExitCode -eq 0) {
+                        Write-Log "Silent collection ($dueCount items) and sync completed successfully!"
+                    } else {
+                        Write-Log "Silent collection failed with exit code $($proc.ExitCode). Check collector_run.log for details."
+                    }
                 } catch {
                     Write-Log "Error executing run_auto.ps1: $_"
                 }
@@ -298,8 +302,12 @@ while ($true) {
         } else {
             Write-Log "Scheduled target reached ($($now.ToString('HH:mm'))). Starting silent background collection (Both tabs, due items)..."
             try {
-                Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait
-                Write-Log "Silent collection and sync completed successfully!"
+                $proc = Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait -PassThru
+                if ($proc.ExitCode -eq 0) {
+                    Write-Log "Silent collection and sync completed successfully!"
+                } else {
+                    Write-Log "Silent collection failed with exit code $($proc.ExitCode). Check collector_run.log for details."
+                }
             } catch {
                 Write-Log "Error executing run_auto.ps1: $_"
             }

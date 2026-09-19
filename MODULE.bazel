@@ -1,0 +1,8 @@
+module(
+    name = "artale_market_tracker",
+    version = "1.0.0",
+)
+
+bazel_dep(name = "rules_python", version = "1.7.0")
+
+register_toolchains("//:host_py_toolchain")

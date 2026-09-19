@@ -74,8 +74,11 @@ python run_collector.py --query "突襲額外獎勵票券" --pages 5 --target-ta
 python run_collector.py --due --parallel 2
 
 # 5. Run aggregation & regenerate dashboard manually
-python -m src.aggregator
+python -m storage.aggregator
 python dashboard.py
+
+# 6. Run Bazel tests
+bazel test //tests:all
 ```
 
 ---
@@ -84,35 +87,23 @@ python dashboard.py
 
 ```
 artale_market_tracker/
-├── assets/
-│   ├── ADBKeyboard.apk        # Android unicode input IME helper
-│   ├── favicon.png            # Dashboard favicon
-│   └── icon.png               # Artale icon asset
-├── data/
-│   ├── backups/               # Automated timestamped SQLite backups
-│   ├── market.db              # SQLite WAL database (trades, listings, candles)
-│   └── quota_tracker.json     # Daily ADB device search quota state
-├── docs/
-│   └── index.html             # Public GitHub Pages production dashboard
-├── src/
-│   ├── adb_controller.py      # Direct ADB device driver, screencap, & Unicode input
-│   ├── parallel_collector.py  # Thread-safe multi-worker task split engine
-│   ├── collector.py           # Core auction house scraping pipeline
-│   ├── aggregator.py          # OHLCV candlestick aggregation engine
-│   ├── tier_evaluator.py      # Trading velocity evaluator & tier categorizer
-│   ├── database.py            # SQLite WAL connection manager & models
-│   ├── ocr_engine.py          # Fast OCR preprocessing and text recognition
-│   └── parser.py              # Auction UI layout slicers & pagination OCR
-├── dashboard.py               # Generates Binance-style HTML dashboard
-├── items_watchlist.json       # 105 tracked items with tier intervals & timestamps
-├── run_collector.py           # Unified CLI interface
-├── run_auto.ps1               # Automated end-to-end collection, aggregation & git sync
-├── schedule_prompt_daemon.ps1 # Hourly WPF scheduler daemon
-├── start_scheduled_tracker.bat
-├── stop_scheduled_tracker.bat
-├── run_auto.bat
-├── run_collector_now.bat
-└── run_all_items.bat
+├── assets/                    # Android IME helper and dashboard icons
+├── cli/                       # Command-line entrypoints (collector, query, calibrate)
+├── config/                    # Coordinates, layouts, and global settings
+├── core/                      # Domain models, watchlist, and categorization
+├── driver/                    # ADB device drivers and window managers
+├── pipeline/                  # Auction scraping pipelines and parallel worker pool
+├── recognition/               # Digit Engine, glyph tables, and text OCR
+├── server/                    # REST API backend server
+├── storage/                   # SQLite WAL database, schemas, and OHLCV aggregator
+├── visualization/             # K-line plotter and dashboard exporter
+├── scripts/                   # Accuracy verification and dataset benchmark tools
+├── tests/                     # 18-target Bazel & unittest automated test suite
+├── dashboard.html             # Binance-style interactive frontend template
+├── items_watchlist.json       # Tracked items with tier intervals & timestamps
+├── run_collector.py           # Unified collection CLI interface
+├── run_auto.ps1               # Automated collection, aggregation & sync pipeline
+└── schedule_prompt_daemon.ps1 # Unattended hourly scheduler daemon
 ```
 
 ---

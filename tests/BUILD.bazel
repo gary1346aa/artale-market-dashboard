@@ -1,0 +1,34 @@
+load("@rules_python//python:defs.bzl", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+TESTS = [
+    "test_config",
+    "test_models",
+    "test_categories",
+    "test_watchlist",
+    "test_database",
+    "test_aggregator",
+    "test_glyph_table",
+    "test_digit_engine",
+    "test_table_parser",
+    "test_text_ocr",
+    "test_drivers",
+    "test_pipeline_collector",
+    "test_async_worker",
+    "test_visualization",
+    "test_dashboard_exporter",
+    "test_cli",
+    "test_unit",
+    "test_accuracy_benchmark",
+]
+
+[
+    py_test(
+        name = t,
+        srcs = [t + ".py"],
+        deps = ["//:artale_market_tracker"],
+        args = ["-v"],
+    )
+    for t in TESTS
+]

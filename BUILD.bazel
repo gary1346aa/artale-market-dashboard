@@ -1,0 +1,41 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_runtime", "py_runtime_pair")
+
+package(default_visibility = ["//visibility:public"])
+
+py_runtime(
+    name = "host_py_runtime",
+    interpreter_path = "C:/Users/gary1/AppData/Local/Programs/Python/Python314/python.exe",
+    python_version = "PY3",
+)
+
+py_runtime_pair(
+    name = "host_py_runtime_pair",
+    py3_runtime = ":host_py_runtime",
+)
+
+toolchain(
+    name = "host_py_toolchain",
+    toolchain = ":host_py_runtime_pair",
+    toolchain_type = "@rules_python//python:toolchain_type",
+)
+
+py_library(
+    name = "artale_market_tracker",
+    srcs = glob(
+        [
+            "config/**/*.py",
+            "core/**/*.py",
+            "driver/**/*.py",
+            "recognition/**/*.py",
+            "storage/**/*.py",
+            "pipeline/**/*.py",
+            "visualization/**/*.py",
+            "server/**/*.py",
+            "cli/**/*.py",
+        ],
+        exclude = [
+            "**/__pycache__/**",
+        ],
+    ),
+    imports = ["."],
+)

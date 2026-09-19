@@ -6,25 +6,29 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-import time
+import argparse
 import json
+import os
 from pathlib import Path
-from typing import Dict, List, Any
+import sys
+import time
+from typing import Any, Dict, List
 from PIL import Image
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+workspace_env = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
+PROJECT_ROOT = Path(workspace_env) if workspace_env else Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.parser import MarketParser
-from src.digit_engine import parse_price_cell, parse_timestamp_cell
-from src.ocr_engine import ocr_image, normalize_item_name
+from recognition.digit_engine import parse_price_cell, parse_timestamp_cell
+from recognition.table_parser import MarketParser
+from recognition.text_ocr import normalize_item_name, ocr_image
 
 DATASET_DIR = PROJECT_ROOT / "data" / "test_dataset"
 REPORT_PATH = PROJECT_ROOT / "data" / "digit_engine_vs_ocr_report.json"
 GOLDEN_PATH = PROJECT_ROOT / "data" / "golden_dataset.json"
 
-def build_golden():
+def build_golden(limit: int = 20):
     print(f"=== Compiling Official Golden Dataset from {DATASET_DIR} ===")
     t_start = time.time()
 
@@ -37,8 +41,17 @@ def build_golden():
                 key = (d["file"], d["row_idx"])
                 discrepancy_map[key] = d
 
-    images = sorted(DATASET_DIR.glob("*.png"))
-    print(f"Found {len(images)} raw test dataset images to process...")
+    manifest_path = DATASET_DIR / "manifest.jsonl"
+    if manifest_path.exists():
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            entries = [json.loads(line) for line in f]
+        images = [DATASET_DIR / e["file"] for e in entries if (DATASET_DIR / e["file"]).exists()]
+    else:
+        images = sorted(DATASET_DIR.glob("*.png"))
+
+    if limit > 0:
+        images = images[:limit]
+    print(f"Found {len(images)} raw test dataset images to process (limit: {limit or 'all'})...")
 
     golden_records: List[Dict[str, Any]] = []
     unanimous_count = 0
@@ -60,11 +73,11 @@ def build_golden():
 
         for row_idx, (y1, y2) in enumerate(parser.ROW_BOUNDS):
             # Parse total price
-            tot_crop = img.crop(parser._scale_box(550, y1, 675, y2))
+            tot_crop = img.crop(parser._scale_box(687, y1, 844, y2))
             total_price = parse_price_cell(tot_crop, tab=tab)
 
             # Parse unit price
-            unit_crop = img.crop(parser._scale_box(675, y1, 790, y2))
+            unit_crop = img.crop(parser._scale_box(844, y1, 987, y2))
             unit_price = parse_price_cell(unit_crop, tab=tab)
 
             # Skip completely empty rows
@@ -76,7 +89,7 @@ def build_golden():
             # Parse timestamp if market tab
             timestamp = None
             if tab == "market":
-                meta_crop = img.crop(parser._scale_box(822, y1 + 6, 920, y1 + 33))
+                meta_crop = img.crop(parser._scale_box(1027, y1 + 7, 1150, y1 + 41))
                 timestamp = parse_timestamp_cell(meta_crop)
 
             # Single sales / equipment display '-' for unit price
@@ -143,4 +156,8 @@ def build_golden():
     print("=" * 60 + "\n")
 
 if __name__ == "__main__":
-    build_golden()
+    parser = argparse.ArgumentParser(description="Compile Official Golden Dataset")
+    parser.add_argument("--limit", type=int, default=2098, help="Max images to compile (default: 2098, 0 for all)")
+    args = parser.parse_args()
+    build_golden(limit=args.limit)
+

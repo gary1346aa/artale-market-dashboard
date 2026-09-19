@@ -1229,7 +1229,7 @@
         <footer class="app-footer">
             <div class="footer-status">
                 <span class="status-dot"></span>
-                <span>Last Updated: <strong class="sync-time">2026-09-19 13:04</strong></span>
+                <span>Last Updated: <strong class="sync-time">2026-09-19 14:00</strong></span>
             </div>
             <div class="footer-credit">
                 <span>© 2026 By <strong>G8G</strong></span>
@@ -1299,7 +1299,7 @@
             <footer class="app-footer">
                 <div class="footer-status">
                     <span class="status-dot"></span>
-                    <span>Last Updated: <strong class="sync-time">2026-09-19 13:04</strong></span>
+                    <span>Last Updated: <strong class="sync-time">2026-09-19 14:00</strong></span>
                 </div>
                 <div class="footer-credit">
                     <span>© 2026 By <strong>G8G</strong></span>
@@ -1494,14 +1494,14 @@
             if (!query) return [];
             // Normalize full-width characters (e.g. ３０ -> 30) and lowercase
             let q = query.trim().toLowerCase()
-                .replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+                .replace(/[\uff01-\uff5e]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
 
             // Insert boundary spaces between Hanzi and Alphanumeric / Digits (e.g. 腰帶30 -> 腰帶 30)
-            q = q.replace(/([一-龥])([0-9a-zA-Z])/g, '$1 $2')
-                 .replace(/([0-9a-zA-Z%])([一-龥])/g, '$1 $2');
+            q = q.replace(/([\u4e00-\u9fa5])([0-9a-zA-Z])/g, '$1 $2')
+                 .replace(/([0-9a-zA-Z%])([\u4e00-\u9fa5])/g, '$1 $2');
 
             // Split by whitespace and normalize trailing '%'
-            return q.split(/\s+/)
+            return q.split(/\\s+/)
                     .filter(t => t.length > 0)
                     .map(t => (t.length > 1 && t.endsWith('%')) ? t.slice(0, -1) : t);
         }
@@ -1579,7 +1579,7 @@
             }
 
             // Tier 3: Subsequence Match (Fuzzy Shorthand, e.g. 腰力30 -> 腰帶力量卷軸30%)
-            const pSeq = qClean.replace(/\s+/g, "");
+            const pSeq = qClean.replace(/\\s+/g, "");
             if (pSeq.length >= 2) {
                 let pIdx = 0;
                 const seqIntervals = [];

@@ -4,7 +4,6 @@ Exports database connection management, schemas, transactions,
 and candlestick aggregation services.
 """
 
-from storage.aggregator import KlineAggregator
 from storage.database import (
     fetch_active_listings,
     fetch_candles,
@@ -17,6 +16,14 @@ from storage.database import (
     save_kline_candles,
     save_matched_trades,
 )
+
+
+def __getattr__(name: str):
+    if name == "KlineAggregator":
+        from storage.aggregator import KlineAggregator
+        return KlineAggregator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "KlineAggregator",

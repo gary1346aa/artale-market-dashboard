@@ -14,7 +14,6 @@ from driver.adb_driver import AdbDriver
 from pipeline.collector import (
     INSTANCE_TO_DEVICE,
     MarketCollector,
-    pause_until_next_8am,
 )
 
 _logger = logging.getLogger(__name__)
@@ -127,14 +126,14 @@ class ParallelCollector:
             rem = collector.get_screen_quota()
             if rem is not None and rem < 2:
                 _logger.warning(
-                    "[%s] Instance '%s' initial quota exhausted (%d < 2). Pausing...",
+                    "[%s] Instance '%s' initial quota exhausted (%d < 2). Retiring worker from pool.",
                     device_id,
                     inst_name,
                     rem,
                 )
                 collector.leave_auction()
-                pause_until_next_8am(inst_name)
-                collector.ensure_focus()
+                collector.shutdown()
+                return
 
             _logger.info(
                 "[%s] Ready. Draining task queue dynamically...", device_id
@@ -168,11 +167,16 @@ class ParallelCollector:
                         )
                         if not ok:
                             # Live screen quota exhausted on this worker
+                            _logger.warning(
+                                "[%s] Quota exhausted on instance '%s'. Re-queueing '%s' and retiring worker.",
+                                device_id,
+                                inst_name,
+                                item,
+                            )
                             collector.leave_auction()
-                            pause_until_next_8am(inst_name)
-                            collector.ensure_focus()
-                            # Re-enqueue item for retry
+                            collector.shutdown()
                             task_queue.put((idx, total_total, item))
+                            return
                     except Exception as err:
                         _logger.error(
                             "[%s] Error processing '%s': %s",

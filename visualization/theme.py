@@ -223,3 +223,27 @@ def draw_text_mixed(
         x += w
 
     return x - orig_x
+
+
+def measure_text_mixed(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font_latin: ImageFont.FreeTypeFont,
+    font_cjk: ImageFont.FreeTypeFont,
+) -> float:
+    """Measures total rendered width of a mixed Latin/CJK string.
+
+    Args:
+        draw: PIL ImageDraw instance.
+        text: String containing mixed ASCII and CJK characters.
+        font_latin: Latin font.
+        font_cjk: CJK font.
+
+    Returns:
+        Total width of the string in pixels.
+    """
+    total_w = 0.0
+    for ch in text:
+        f = font_cjk if ord(ch) > 0x7F else font_latin
+        total_w += draw.textlength(ch, font=f)
+    return total_w

@@ -26,6 +26,7 @@ from visualization.theme import (
     format_vol_cjk,
     get_font_gs,
     get_font_noto,
+    measure_text_mixed,
 )
 
 def get_kline_data(item_name: str, timeframe: str = "1h", limit: int = 36, db_path: Optional[Path] = None) -> Tuple[List[Dict], Optional[int]]:

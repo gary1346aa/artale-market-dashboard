@@ -1,16 +1,9 @@
-"""Visualization package for Artale Market Tracker.
+"""Backwards compatibility shim for legacy src.kline_plotter imports."""
 
-Exports candlestick chart plotting, financial typography and color themes,
-and dashboard export services.
-"""
-
-from visualization.dashboard_exporter import (
-    export_dashboard_data,
-    generate_dashboard_html,
-)
 from visualization.kline_plotter import (
     generate_kline_plot,
     generate_kline_plot_bytes,
+    get_kline_data,
 )
 from visualization.theme import (
     calc_nice_ticks,
@@ -26,8 +19,7 @@ from visualization.theme import (
 __all__ = [
     "generate_kline_plot",
     "generate_kline_plot_bytes",
-    "export_dashboard_data",
-    "generate_dashboard_html",
+    "get_kline_data",
     "format_price_cjk",
     "format_axis_price",
     "format_vol_cjk",

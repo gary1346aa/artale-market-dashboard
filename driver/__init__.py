@@ -4,7 +4,12 @@ Exports ADB controllers, window managers, and LDPlayer lifecycle managers.
 """
 
 from driver.adb_driver import AdbController, AdbDriver
-from driver.emulator_controller import EmulatorController, InstanceLauncher
+from driver.emulator_controller import (
+    EmulatorController,
+    InstanceLauncher,
+    set_windows_power_plan,
+)
+from driver.game_bootstrapper import GameBootstrapper, ScreenState
 from driver.window_driver import (
     WindowManager,
     WindowSelector,
@@ -16,7 +21,10 @@ __all__ = [
     "AdbController",
     "EmulatorController",
     "InstanceLauncher",
+    "GameBootstrapper",
+    "ScreenState",
     "WindowManager",
     "WindowSelector",
     "enable_dpi_awareness",
+    "set_windows_power_plan",
 ]

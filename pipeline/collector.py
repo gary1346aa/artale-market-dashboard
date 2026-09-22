@@ -139,10 +139,14 @@ class MarketCollector:
         instance_name: Optional[str] = None,
         use_adb: bool = True,
         allow_instance_rotation: bool = True,
+        auto_bootstrap: bool = False,
+        clean_reboot: bool = False,
     ) -> None:
         """Initializes MarketCollector with drivers and background workers."""
         self.use_adb = use_adb
         self.allow_instance_rotation = allow_instance_rotation
+        self.auto_bootstrap = auto_bootstrap
+        self.clean_reboot = clean_reboot
         self.current_instance = instance_name or "槍手"
         self.win_mgr = window_mgr or WindowManager(
             title_keywords=[self.current_instance, "LDPlayer", "雷電模擬器", "雷電"]
@@ -262,6 +266,34 @@ class MarketCollector:
             True if Auction House is ready, False otherwise.
         """
         if self.use_adb and self.adb:
+            # Check if instance is in neither Auction House nor Free Market
+            if not self.adb.is_auction_open() and not self.adb.is_free_market():
+                if self.auto_bootstrap:
+                    _logger.info(
+                        "[%s] Instance neither in Auction nor Free Market. Bootstrapping...",
+                        self.current_instance,
+                    )
+                    from driver.game_bootstrapper import GameBootstrapper
+
+                    bootstrapper = GameBootstrapper(
+                        self.adb, instance_name=self.current_instance
+                    )
+                    if not bootstrapper.bootstrap_to_free_market(
+                        clean_reboot=self.clean_reboot
+                    ):
+                        _logger.error(
+                            "Failed to bootstrap instance '%s' to Free Market.",
+                            self.current_instance,
+                        )
+                        return False
+                else:
+                    _logger.error(
+                        "[%s] Instance is neither in Auction House nor Free Market. "
+                        "Pass --bootstrap to auto-launch and enter Free Market.",
+                        self.current_instance,
+                    )
+                    return False
+
             for attempt in range(1, max_retries + 1):
                 if self.adb.is_auction_open():
                     rem = self.get_screen_quota()

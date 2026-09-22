@@ -51,6 +51,17 @@ POS_AUCTION_BUTTON = Point(x=1239, y=616)
 POS_LEAVE_AUCTION = Point(x=1015, y=45)   # [離開] Button in top-right
 POS_CONFIRM_EXIT = Point(x=635, y=615)
 POS_STOP_DIALOG = Point(x=349, y=461)
+POS_FREE_MARKET_MENU_BUTTON = Point(x=1140, y=445)  # [自由市場] in mobile menu
+
+# Game Bootstrap & Launcher Anchors
+POS_HOME_MSW_ICON = Point(x=640, y=210)             # MapleStory Worlds on home screen
+POS_MSW_SEARCH_BUTTON = Point(x=411, y=69)          # Magnifier in MSW lobby top bar
+POS_MSW_SEARCH_INPUT = Point(x=350, y=56)           # Search text field
+POS_MSW_PLAY_BUTTON = Point(x=473, y=1143)          # [▶ 遊玩] on Artale details page
+POS_LOGIN_BUTTON = Point(x=980, y=472)              # [登入] on title screen
+POS_SELECT_CHARACTER_BUTTON = Point(x=847, y=275)   # [選擇角色] on character select platform
+POS_DISMISS_DRAWER = Point(x=500, y=360)            # Tap outside drawer to close mobile menu
+POS_EXIT_MODAL_CANCEL = Point(x=483, y=490)         # [否] button on "前往大廳" exit dialog
 
 # ==============================================================================
 # Precision OCR & Digit Extraction Regions (Canonical 1280x720)

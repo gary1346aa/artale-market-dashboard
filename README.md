@@ -11,9 +11,9 @@ An automated, high-speed market intelligence, OCR extraction, candlestick aggreg
 
 ## 🌟 Key Features & Architecture
 
-### 1. 100% Silent Background ADB Automation
-- **Zero Mouse Hijacking**: All input (`tap`, `keyevent`) is injected directly via Android Debug Bridge (`adb.exe`).
-- **Zero Window Focus Stealing**: Runs completely in the background without minimizing your current work, moving your cursor, or interrupting PC usage.
+### 1. Background ADB Automation
+- **Direct ADB Input**: Input commands (`tap`, `keyevent`) are sent directly through Android Debug Bridge (`adb.exe`).
+- **Background Execution**: Runs without requiring window focus or moving the host cursor.
 - **Native Unicode Chinese Input**: Injects complex Traditional Chinese search keywords directly via `ADBKeyBoard.apk` (`am broadcast -a ADB_INPUT_B64`), bypassing host clipboard latency and phantom glyph issues.
 - **Robust Modal & Dim Validation**: Intelligent screen-dimming detection distinguishes active modals from table content, preventing spurious keystrokes and avoiding unwanted lobby exit prompts.
 
@@ -48,9 +48,9 @@ An automated, high-speed market intelligence, OCR extraction, candlestick aggreg
 
 | Launcher Script | Description |
 | :--- | :--- |
-| **[`start_scheduled_tracker.bat`](start_scheduled_tracker.bat)** | **Starts the Hourly Background Daemon**. Runs 100% silently in the background, executing `both + due` every hour on the hour with zero interruption to PC use. |
-| **[`run_collector_now.bat`](run_collector_now.bat)** | **One-Click Due Items Scan**. Immediately scans all currently due items (Both: Asks + Trades) in parallel ADB mode with zero prompts. |
-| **[`run_all_items.bat`](run_all_items.bat)** | **One-Click Full Catalog Scan**. Scans the entire watchlist of all items (Both: Asks + Trades) in parallel ADB mode with zero prompts. |
+| **[`start_scheduled_tracker.bat`](start_scheduled_tracker.bat)** | **Starts the Hourly Background Daemon**. Runs in the background, executing `both + due` hourly. |
+| **[`run_collector_now.bat`](run_collector_now.bat)** | **Due Items Scan**. Scans all currently due items (Both: Asks + Trades) in parallel across connected devices. |
+| **[`run_all_items.bat`](run_all_items.bat)** | **Full Catalog Scan**. Scans the entire watchlist of all items (Both: Asks + Trades) in parallel across connected devices. |
 | **[`run_auto.bat`](run_auto.bat)** | **Automated Pipeline Runner**. Runs collection (`both + due`), aggregates K-lines, builds dashboard, and syncs to GitHub Pages. |
 | **[`stop_scheduled_tracker.bat`](stop_scheduled_tracker.bat)** | **Stops the Background Daemon**. Safely terminates any running scheduler processes. |
 

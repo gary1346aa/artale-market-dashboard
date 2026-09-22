@@ -1,8 +1,7 @@
 """Deterministic bitmask digit and timestamp recognition engine.
 
-Implements ultra-fast O(1) bitmask hash lookups and 2D shift-invariant
+Implements O(1) bitmask hash lookups and 2D shift-invariant
 minimum Hamming distance fallbacks calibrated against in-game fonts.
-Guarantees 100% mathematical precision with zero OCR hallucinations.
 """
 
 from typing import List, Optional, Tuple
@@ -285,7 +284,6 @@ def parse_quota_header(
 
     Focuses strictly on the remaining quota digits ('XXX') located immediately
     before the slash on the header bar (canonical x=543..574, y=10..28).
-    Guarantees 100% mathematical precision with zero OCR hallucinations.
 
     Args:
         frame: PIL Image of the game screen.

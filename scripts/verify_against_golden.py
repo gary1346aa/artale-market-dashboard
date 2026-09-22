@@ -139,7 +139,7 @@ def verify_against_golden(limit: int = 0):
                 print(f"    - {f}")
         sys.exit(1)
     else:
-        print("\nSUCCESS: 100.0% Perfect Match Against Golden Standard. Zero Regressions!\n")
+        print("\nSUCCESS: All records matched the golden standard.\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Regression Verification Against Golden Dataset")

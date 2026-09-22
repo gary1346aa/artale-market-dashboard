@@ -10,15 +10,49 @@ import logging
 from pathlib import Path
 import sys
 import time
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from config.settings import DEFAULT_INSTANCES, WATCHLIST_PATH, setup_logging
 from core.watchlist import WatchlistManager, get_due_items
+from driver.emulator_controller import EmulatorController
 from driver.window_driver import WindowManager, WindowSelector
 from pipeline.collector import MarketCollector
 from pipeline.parallel_collector import ParallelCollector
 
 _logger = logging.getLogger("ArtaleCollector")
+
+
+def parallel_bootstrap_devices(devices: List[str], max_timeout_sec: int = 160) -> List[str]:
+    """Runs GameBootstrapper concurrently across the given ADB devices.
+
+    Returns a list of device IDs that successfully reached Free Market.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from driver.adb_driver import AdbDriver
+    from driver.game_bootstrapper import GameBootstrapper, ScreenState, detect_screen_state
+
+    _logger.info("Initiating parallel Free Market bootstrap for devices: %s", devices)
+    healthy_devices: List[str] = []
+
+    def _boot_single(dev: str) -> Tuple[str, bool]:
+        drv = AdbDriver(device_id=dev)
+        bootstrapper = GameBootstrapper(drv)
+        ok = bootstrapper.bootstrap_to_free_market(clean_reboot=False, max_timeout_sec=max_timeout_sec)
+        final_state = detect_screen_state(drv.screencap())
+        is_ready = ok or (final_state == ScreenState.STATE_FREE_MARKET)
+        return dev, is_ready
+
+    with ThreadPoolExecutor(max_workers=len(devices)) as executor:
+        futures = {executor.submit(_boot_single, d): d for d in devices}
+        for fut in as_completed(futures):
+            dev, ready = fut.result()
+            if ready:
+                _logger.info("[%s] Bootstrap SUCCESS -> Device ready for tasks.", dev)
+                healthy_devices.append(dev)
+            else:
+                _logger.error("[%s] Bootstrap FAILED -> Excluding device from current batch pool.", dev)
+
+    return healthy_devices
 
 
 def main() -> None:
@@ -92,6 +126,21 @@ def main() -> None:
         help="Run multi-worker parallel collection (optional: max workers).",
     )
     parser.add_argument(
+        "--cold-boot",
+        action="store_true",
+        help="Cold-boot target LDPlayer emulators if they are not already running.",
+    )
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Bootstrap emulator(s) through Artale to Free Market before scanning.",
+    )
+    parser.add_argument(
+        "--kill-after",
+        action="store_true",
+        help="Terminate emulators upon batch completion or error to save power.",
+    )
+    parser.add_argument(
         "--loop",
         action="store_true",
         help="Continuously poll and collect due items on schedule.",
@@ -113,159 +162,206 @@ def main() -> None:
         if selected:
             target_win_mgr = WindowManager(target_hwnd=selected[0]["hwnd"])
 
-    # 1. Passive Mode
-    if args.mode == "passive":
-        from pipeline.passive_monitor import PassiveMarketMonitor
+    ctrl = EmulatorController()
+    healthy_devices: Optional[List[str]] = None
 
-        monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
-        monitor.start_listener()
-        return
-
-    # 2. Single Item Query Mode
-    if args.query:
-        collector = MarketCollector(
-            window_mgr=target_win_mgr,
-            instance_name=args.instance,
-            use_adb=True,
-            allow_instance_rotation=False,
-        )
-        try:
-            collector.run_query_collection(
-                args.query, max_pages=args.pages, target_tab=args.target_tab
-            )
-        finally:
-            collector.shutdown()
-        return
-
-    # 3. Helper to select single vs parallel scanner
-    def get_scanner() -> Union[MarketCollector, ParallelCollector]:
-        if args.instance is None and (args.parallel is None or args.parallel != 1):
-            max_w = (
-                args.parallel
-                if (args.parallel is not None and args.parallel > 0)
-                else None
-            )
-            return ParallelCollector(max_workers=max_w, use_adb=True)
-        return MarketCollector(
-            window_mgr=target_win_mgr,
-            instance_name=args.instance,
-            use_adb=True,
-        )
-
-    # 3. Due Items Collection Mode
-    if args.due:
-        wm = WatchlistManager(watchlist_path=Path(args.watchlist))
-        if args.loop:
-            _logger.info("Starting continuous schedule loop for due items...")
-            while True:
-                due_items, wait_sec, next_it = wm.get_due_items()
-                if due_items:
-                    _logger.info(
-                        "Found %d items currently due. Scanning...",
-                        len(due_items),
-                    )
-                    scanner = get_scanner()
-                    try:
-                        if isinstance(scanner, ParallelCollector):
-                            scanner.run_catalog_scan(
-                                due_items,
-                                max_pages=args.pages,
-                                target_tab=args.target_tab,
-                            )
-                        else:
-                            scanner.run_catalog_scan(
-                                due_items,
-                                max_pages_per_query=args.pages,
-                                target_tab=args.target_tab,
-                            )
-                    finally:
-                        if hasattr(scanner, "shutdown"):
-                            scanner.shutdown()
-                else:
-                    _logger.info(
-                        "All items up to date. Next due: '%s' in %.1f min.",
-                        next_it,
-                        wait_sec / 60.0,
-                    )
-                    time.sleep(min(wait_sec, 60.0))
-        else:
+    try:
+        # Pre-check for due mode without loop: if nothing is due, exit immediately before booting
+        if args.due and not args.loop:
+            wm = WatchlistManager(watchlist_path=Path(args.watchlist))
             due_items, wait_sec, next_it = wm.get_due_items()
             if not due_items:
                 _logger.info(
-                    "All items up to date! Next due: '%s' in %.1f minutes.",
+                    "All items up to date. Next due: '%s' in %.1f minutes.",
                     next_it,
                     wait_sec / 60.0,
                 )
                 return
 
-            _logger.info("Found %d items due to update.", len(due_items))
-            scanner = get_scanner()
-            try:
-                if isinstance(scanner, ParallelCollector):
-                    scanner.run_catalog_scan(
-                        due_items,
-                        max_pages=args.pages,
-                        target_tab=args.target_tab,
-                        start_index=args.start_index,
-                    )
-                else:
-                    scanner.run_catalog_scan(
-                        due_items,
-                        max_pages_per_query=args.pages,
-                        target_tab=args.target_tab,
-                        start_index=args.start_index,
-                    )
-            finally:
-                if hasattr(scanner, "shutdown"):
-                    scanner.shutdown()
-            _logger.info("Due collection round completed.")
+        # 1. Cold-Boot phase
+        if args.cold_boot:
+            if args.instance:
+                _logger.info("Cold-booting instance '%s'...", args.instance)
+                ctrl.launch_instance(args.instance)
+            else:
+                _logger.info("Cold-booting all tracker emulators...")
+                ctrl.launch_all()
+
+        # 2. Bootstrap phase
+        if args.bootstrap:
+            from driver.adb_driver import AdbDriver
+            if args.instance:
+                from pipeline.collector import INSTANCE_TO_DEVICE
+                dev = INSTANCE_TO_DEVICE.get(args.instance, args.instance)
+                target_devs = [dev]
+            else:
+                attached = AdbDriver.list_attached_devices()
+                target_devs = [d for d in ["emulator-5560", "emulator-5562", "emulator-5568"] if d in attached] or attached
+            if not target_devs:
+                _logger.warning("No attached devices found to bootstrap!")
+            else:
+                healthy_devices = parallel_bootstrap_devices(target_devs)
+                if not healthy_devices:
+                    _logger.error("No devices successfully reached Free Market! Aborting collection batch.")
+                    return
+
+        # Helper to select single vs parallel scanner
+        def get_scanner() -> Union[MarketCollector, ParallelCollector]:
+            if args.instance is None and (args.parallel is None or args.parallel != 1):
+                max_w = (
+                    args.parallel
+                    if (args.parallel is not None and args.parallel > 0)
+                    else None
+                )
+                return ParallelCollector(
+                    max_workers=max_w,
+                    devices=healthy_devices,
+                    use_adb=True,
+                )
+            return MarketCollector(
+                window_mgr=target_win_mgr,
+                instance_name=args.instance,
+                use_adb=True,
+            )
+
+        # 1. Passive Mode
+        if args.mode == "passive":
+            from pipeline.passive_monitor import PassiveMarketMonitor
+
+            monitor = PassiveMarketMonitor(window_mgr=target_win_mgr)
+            monitor.start_listener()
             return
 
-    # 4. Watchlist / Catalog Scan Mode
-    wl_path = Path(args.watchlist)
-    if not wl_path.exists():
-        _logger.error("Watchlist file '%s' not found.", args.watchlist)
-        return
-
-    with open(wl_path, "r", encoding="utf-8") as f:
-        raw_wl = json.load(f)
-
-    if isinstance(raw_wl, dict):
-        if args.tier:
-            items = [
-                k
-                for k, v in raw_wl.items()
-                if (v.get("tier", 3) if isinstance(v, dict) else v) == args.tier
-            ]
-            _logger.info(
-                "Filtered watchlist to Tier %d (%d items).",
-                args.tier,
-                len(items),
+        # 2. Single Item Query Mode
+        if args.query:
+            collector = MarketCollector(
+                window_mgr=target_win_mgr,
+                instance_name=args.instance,
+                use_adb=True,
+                allow_instance_rotation=False,
             )
+            try:
+                collector.run_query_collection(
+                    args.query, max_pages=args.pages, target_tab=args.target_tab
+                )
+            finally:
+                collector.shutdown()
+            return
+
+        # 3. Due Items Collection Mode
+        if args.due:
+            wm = WatchlistManager(watchlist_path=Path(args.watchlist))
+            if args.loop:
+                _logger.info("Starting continuous schedule loop for due items...")
+                while True:
+                    due_items, wait_sec, next_it = wm.get_due_items()
+                    if due_items:
+                        _logger.info(
+                            "Found %d items currently due. Scanning...",
+                            len(due_items),
+                        )
+                        scanner = get_scanner()
+                        try:
+                            if isinstance(scanner, ParallelCollector):
+                                scanner.run_catalog_scan(
+                                    due_items,
+                                    max_pages=args.pages,
+                                    target_tab=args.target_tab,
+                                )
+                            else:
+                                scanner.run_catalog_scan(
+                                    due_items,
+                                    max_pages_per_query=args.pages,
+                                    target_tab=args.target_tab,
+                                )
+                        finally:
+                            if hasattr(scanner, "shutdown"):
+                                scanner.shutdown()
+                    else:
+                        _logger.info(
+                            "All items up to date. Next due: '%s' in %.1f min.",
+                            next_it,
+                            wait_sec / 60.0,
+                        )
+                        time.sleep(min(wait_sec, 60.0))
+            else:
+                _logger.info("Found %d items due to update.", len(due_items))
+                scanner = get_scanner()
+                try:
+                    if isinstance(scanner, ParallelCollector):
+                        scanner.run_catalog_scan(
+                            due_items,
+                            max_pages=args.pages,
+                            target_tab=args.target_tab,
+                            start_index=args.start_index,
+                        )
+                    else:
+                        scanner.run_catalog_scan(
+                            due_items,
+                            max_pages_per_query=args.pages,
+                            target_tab=args.target_tab,
+                            start_index=args.start_index,
+                        )
+                finally:
+                    if hasattr(scanner, "shutdown"):
+                        scanner.shutdown()
+                _logger.info("Due collection round completed.")
+                return
+
+        # 4. Watchlist / Catalog Scan Mode
+        wl_path = Path(args.watchlist)
+        if not wl_path.exists():
+            _logger.error("Watchlist file '%s' not found.", args.watchlist)
+            return
+
+        with open(wl_path, "r", encoding="utf-8") as f:
+            raw_wl = json.load(f)
+
+        if isinstance(raw_wl, dict):
+            if args.tier:
+                items = [
+                    k
+                    for k, v in raw_wl.items()
+                    if (v.get("tier", 3) if isinstance(v, dict) else v) == args.tier
+                ]
+                _logger.info(
+                    "Filtered watchlist to Tier %d (%d items).",
+                    args.tier,
+                    len(items),
+                )
+            else:
+                items = list(raw_wl.keys())
         else:
-            items = list(raw_wl.keys())
-    else:
-        items = raw_wl
+            items = raw_wl
 
-    scanner = get_scanner()
-    try:
-        if isinstance(scanner, ParallelCollector):
-            scanner.run_catalog_scan(
-                items,
-                max_pages=args.pages,
-                target_tab=args.target_tab,
-                start_index=args.start_index,
-            )
-        else:
-            scanner.run_catalog_scan(
-                items,
-                max_pages_per_query=args.pages,
-                target_tab=args.target_tab,
-                start_index=args.start_index,
-            )
+        scanner = get_scanner()
+        try:
+            if isinstance(scanner, ParallelCollector):
+                scanner.run_catalog_scan(
+                    items,
+                    max_pages=args.pages,
+                    target_tab=args.target_tab,
+                    start_index=args.start_index,
+                )
+            else:
+                scanner.run_catalog_scan(
+                    items,
+                    max_pages_per_query=args.pages,
+                    target_tab=args.target_tab,
+                    start_index=args.start_index,
+                )
+        finally:
+            if hasattr(scanner, "shutdown"):
+                scanner.shutdown()
+
     finally:
-        if hasattr(scanner, "shutdown"):
-            scanner.shutdown()
+        if args.kill_after:
+            if args.instance:
+                _logger.info("Batch finished. Terminating instance '%s'...", args.instance)
+                ctrl.quit_instance(args.instance)
+            else:
+                _logger.info("Batch finished. Terminating emulator instances...")
+                ctrl.quit_all()
 
 
 if __name__ == "__main__":

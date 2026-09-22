@@ -1,0 +1,127 @@
+"""Unit tests for GameBootstrapper and dynamic Artale card detection."""
+
+import unittest
+from unittest.mock import MagicMock, patch
+
+from PIL import Image
+
+from driver.game_bootstrapper import (
+    GameBootstrapper,
+    MSW_PACKAGE_NAME,
+    find_artale_card_coordinates,
+)
+
+
+class TestGameBootstrapper(unittest.TestCase):
+    """Tests for game bootstrap automation and card OCR filtering."""
+
+    @patch("winocr.recognize_pil_sync")
+    def test_find_artale_card_normal_order(self, mock_winocr):
+        """Card detection locates Artale (繁體中文版) and ignores Lounge."""
+        mock_winocr.return_value = {
+            "lines": [
+                {
+                    "text": "Artale Lounge (繁體中文版)",
+                    "words": [
+                        {
+                            "text": "Lounge",
+                            "bounding_rect": {"x": 100.0, "y": 430.0, "width": 80.0, "height": 20.0},
+                        }
+                    ],
+                },
+                {
+                    "text": "Artale (繁體中文版)",
+                    "words": [
+                        {
+                            "text": "繁",
+                            "bounding_rect": {"x": 520.0, "y": 432.0, "width": 24.0, "height": 24.0},
+                        },
+                        {
+                            "text": "體",
+                            "bounding_rect": {"x": 545.0, "y": 432.0, "width": 24.0, "height": 24.0},
+                        },
+                    ],
+                },
+            ]
+        }
+        dummy = Image.new("RGB", (720, 1280))
+        coords = find_artale_card_coordinates(dummy)
+        self.assertIsNotNone(coords)
+        self.assertEqual(coords, (532, 312))
+
+    @patch("winocr.recognize_pil_sync")
+    def test_find_artale_card_reversed_order(self, mock_winocr):
+        """Card detection works when card positions are swapped (Artale on left)."""
+        mock_winocr.return_value = {
+            "lines": [
+                {
+                    "text": "Artale (繁體中文版)",
+                    "words": [
+                        {
+                            "text": "繁",
+                            "bounding_rect": {"x": 120.0, "y": 430.0, "width": 24.0, "height": 24.0},
+                        }
+                    ],
+                },
+                {
+                    "text": "Artale Lounge",
+                    "words": [
+                        {
+                            "text": "Lounge",
+                            "bounding_rect": {"x": 500.0, "y": 430.0, "width": 80.0, "height": 20.0},
+                        }
+                    ],
+                },
+            ]
+        }
+        dummy = Image.new("RGB", (720, 1280))
+        coords = find_artale_card_coordinates(dummy)
+        self.assertIsNotNone(coords)
+        self.assertEqual(coords, (132, 310))
+
+    @patch("winocr.recognize_pil_sync")
+    def test_find_artale_card_no_match(self, mock_winocr):
+        """Returns None if no matching tokens exist."""
+        mock_winocr.return_value = {"lines": []}
+        dummy = Image.new("RGB", (720, 1280))
+        coords = find_artale_card_coordinates(dummy)
+        self.assertIsNone(coords)
+
+    def test_return_home_and_cleanup(self):
+        """Verifies force-stop, HOME key, and ESC popup dismissals."""
+        mock_adb = MagicMock()
+        mock_ctrl = MagicMock()
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="槍手")
+
+        bootstrapper.return_home_and_cleanup()
+        mock_adb._run_adb.assert_called_with("shell", "am", "force-stop", MSW_PACKAGE_NAME)
+        mock_adb.keyevent.assert_called_with(3)
+        mock_adb.send_esc.assert_called_with(count=4, delay_sec=0.4)
+
+    def test_restart_instance_clean(self):
+        """Verifies clean reboot shuts down, relaunches, and sends ESC."""
+        mock_adb = MagicMock()
+        mock_ctrl = MagicMock()
+        mock_ctrl.launch_instance.return_value = True
+
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="槍手")
+        res = bootstrapper.restart_instance_clean()
+
+        self.assertTrue(res)
+        mock_ctrl.quit_instance.assert_called_once_with("槍手")
+        mock_ctrl.launch_instance.assert_called_once_with("槍手", max_wait_sec=60)
+        mock_adb.send_esc.assert_called_once_with(count=4, delay_sec=0.5)
+
+    def test_bootstrap_short_circuits_if_already_in_free_market(self):
+        """Short-circuits immediately if already in Free Market."""
+        mock_adb = MagicMock()
+        mock_adb.is_free_market.return_value = True
+        mock_ctrl = MagicMock()
+
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="槍手")
+        self.assertTrue(bootstrapper.bootstrap_to_free_market())
+        mock_adb.tap.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

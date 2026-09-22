@@ -1,22 +1,94 @@
 """LDPlayer emulator lifecycle controller.
 
 Wraps ldconsole.exe commands to query, launch, reboot, or close Android
-emulator instances programmatically.
+emulator instances programmatically, with COM sanitization,
+process teardown sequencing, and modal dialog error handling.
 """
 
 import logging
 from pathlib import Path
 import subprocess
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from config.settings import DEFAULT_LDCONSOLE
+try:
+    import win32con
+    import win32gui
+
+    _HAS_WIN32: bool = True
+except ImportError:
+    _HAS_WIN32: bool = False
+
+from config.settings import (
+    DEFAULT_LDCONSOLE,
+    DEVICE_INSTANCE_MAP,
+    INSTANCE_DEVICE_MAP,
+    INSTANCE_INDEX_MAP,
+)
 
 _logger = logging.getLogger(__name__)
 
+# Windows power scheme GUIDs
+_POWER_PLAN_GUIDS: Dict[str, str] = {
+    "ultimate": "ee8b14d0-ad4d-4345-8f52-928a761433ff",
+    "balanced": "381b4222-f694-41f0-9685-ff5bb260df2e",
+}
+
+# COM & Process Synchronization Delays (seconds)
+_COM_MUTEX_RELEASE_DELAY_SEC: float = 2.5
+_TEARDOWN_GRACE_PERIOD_SEC: float = 3.0
+_POST_TEARDOWN_COM_DELAY_SEC: float = 2.0
+_DEFAULT_BOOT_TIMEOUT_SEC: int = 50
+_ALL_BOOT_TIMEOUT_SEC: int = 60
+
+# Modal error dialog keywords and recovery button texts
+_ERROR_DIALOG_KEYWORDS: Tuple[str, ...] = ("COM", "無效", "重試", "載入失敗")
+_ERROR_DIALOG_RECOVERY_LABELS: Tuple[str, ...] = ("嘗試修正", "修正", "確定")
+
+
+def resolve_instance_index(instance_name: Union[str, int]) -> int:
+    """Resolves an instance name, index string, or device ID to an LDPlayer numeric index.
+
+    Args:
+        instance_name: Instance name (e.g. '槍手'), numeric string ('3'), or device serial.
+
+    Returns:
+        int: LDPlayer numeric index.
+    """
+    key = str(instance_name).strip()
+    if key in INSTANCE_INDEX_MAP:
+        return INSTANCE_INDEX_MAP[key]
+    if key in DEVICE_INSTANCE_MAP:
+        return INSTANCE_INDEX_MAP.get(DEVICE_INSTANCE_MAP[key], 0)
+    if key.isdigit():
+        return int(key)
+    return 0
+
+
+def resolve_device_serial(instance_name: Union[str, int]) -> Optional[str]:
+    """Resolves an instance identifier to its ADB device serial (e.g. 'emulator-5560').
+
+    Args:
+        instance_name: Instance name, index, or ADB device ID.
+
+    Returns:
+        Optional[str]: ADB device ID string if known, else None.
+    """
+    key = str(instance_name).strip()
+    if key in INSTANCE_DEVICE_MAP:
+        return INSTANCE_DEVICE_MAP[key]
+    if key in DEVICE_INSTANCE_MAP:
+        return key
+
+    idx = resolve_instance_index(key)
+    for name, i in INSTANCE_INDEX_MAP.items():
+        if i == idx and name in INSTANCE_DEVICE_MAP:
+            return INSTANCE_DEVICE_MAP[name]
+    return None
+
 
 class EmulatorController:
-    """Manages LDPlayer instance lifecycle via ldconsole.
+    """Manages LDPlayer instance lifecycle via ldconsole and OS process control.
 
     Attributes:
         ldconsole_path: Path to ldconsole.exe binary.
@@ -25,18 +97,31 @@ class EmulatorController:
     def __init__(
         self, ldconsole_path: Union[str, Path] = DEFAULT_LDCONSOLE
     ) -> None:
-        """Initializes EmulatorController with ldconsole executable path."""
+        """Initializes EmulatorController with ldconsole executable path.
+
+        Args:
+            ldconsole_path: File path to ldconsole.exe.
+        """
         self.ldconsole_path = str(ldconsole_path)
 
     @staticmethod
-    def _decode_output(raw_bytes: bytes) -> str:
-        """Robustly decodes raw CLI output across big5, cp950, utf-8, and system codepages."""
+    def _decode_output(raw_output: Union[bytes, str]) -> str:
+        """Robustly decodes raw CLI output across big5, cp950, utf-8, and system codepages.
+
+        Args:
+            raw_output: Raw bytes or string from subprocess stdout/stderr.
+
+        Returns:
+            str: Decoded text string.
+        """
+        if isinstance(raw_output, str):
+            return raw_output
         for enc in ("utf-8", "cp950", "big5", "gbk"):
             try:
-                return raw_bytes.decode(enc)
+                return raw_output.decode(enc)
             except Exception:
                 continue
-        return raw_bytes.decode("latin1", errors="replace")
+        return raw_output.decode("latin1", errors="replace")
 
     def is_running(self, instance_name: str) -> bool:
         """Checks if an LDPlayer instance is currently running.
@@ -45,23 +130,13 @@ class EmulatorController:
             instance_name: Name, index, or ADB device ID of the instance.
 
         Returns:
-            True if instance is running, False otherwise.
+            bool: True if instance is running, False otherwise.
         """
-        # 1. Fast, 100% reliable ADB device check
-        index_adb_map = {
-            "槍手": "emulator-5560",
-            "打火機": "emulator-5562",
-            "弩手": "emulator-5568",
-            "3": "emulator-5560",
-            "4": "emulator-5562",
-            "7": "emulator-5568",
-            "emulator-5560": "emulator-5560",
-            "emulator-5562": "emulator-5562",
-            "emulator-5568": "emulator-5568",
-        }
-        dev_serial = index_adb_map.get(str(instance_name).strip())
+        # 1. Fast, reliable ADB device check
+        dev_serial = resolve_device_serial(instance_name)
         if dev_serial:
             from driver.adb_driver import AdbDriver
+
             try:
                 attached = AdbDriver.list_attached_devices()
                 if dev_serial in attached:
@@ -72,14 +147,16 @@ class EmulatorController:
         # 2. Fallback to ldconsole isrunning
         try:
             param = ["--index", str(instance_name)] if str(instance_name).isdigit() else ["--name", str(instance_name)]
+            if str(instance_name).strip() in INSTANCE_INDEX_MAP:
+                param = ["--index", str(INSTANCE_INDEX_MAP[str(instance_name).strip()])]
             res = subprocess.run(
                 [self.ldconsole_path, "isrunning"] + param,
                 capture_output=True,
+                text=True,
                 check=False,
             )
             out_str = self._decode_output(res.stdout).strip()
             return out_str == "running"
-
         except Exception as err:
             _logger.error(
                 "Error checking instance state for '%s': %s",
@@ -87,7 +164,6 @@ class EmulatorController:
                 err,
             )
             return False
-
 
     @staticmethod
     def sanitize_com_service() -> None:
@@ -137,7 +213,7 @@ class EmulatorController:
                         capture_output=True,
                         check=False,
                     )
-                    time.sleep(2.5)  # Allow Windows kernel to release VBoxSVC_Mutex
+                    time.sleep(_COM_MUTEX_RELEASE_DELAY_SEC)
                     _logger.info("COM state sanitized successfully.")
         except Exception as err:
             _logger.debug("COM sanitization check error: %s", err)
@@ -146,12 +222,10 @@ class EmulatorController:
     def check_and_dismiss_error_dialogs() -> bool:
         """Finds and dismisses modal error dialogs like '載入失敗 - 無效的COM接口'.
 
-        Returns True if a dialog was found and dismissed.
+        Returns:
+            bool: True if an error dialog was detected and handled, False otherwise.
         """
-        try:
-            import win32gui
-            import win32con
-        except ImportError:
+        if not _HAS_WIN32:
             return False
 
         found = False
@@ -176,13 +250,21 @@ class EmulatorController:
                         pass
 
                     full_text = " ".join(t[1] for t in child_controls)
-                    if any(k in full_text for k in ("COM", "無效", "重試", "載入失敗")) or "載入失敗" in title:
-                        _logger.warning("Detected modal error dialog '%s' [%s]: %s", title, cls, full_text)
-                        # Try clicking "嘗試修正" or "確定" button first
+                    if any(k in full_text for k in _ERROR_DIALOG_KEYWORDS) or "載入失敗" in title:
+                        _logger.warning(
+                            "Detected modal error dialog '%s' [%s]: %s",
+                            title,
+                            cls,
+                            full_text,
+                        )
+                        # Attempt clicking recovery button first
                         clicked = False
                         for chwnd, ctext in child_controls:
-                            if any(btn_label in ctext for btn_label in ("嘗試修正", "修正", "確定")):
-                                _logger.info("Clicking recovery button '%s' on dialog...", ctext)
+                            if any(label in ctext for label in _ERROR_DIALOG_RECOVERY_LABELS):
+                                _logger.info(
+                                    "Clicking recovery button '%s' on dialog...",
+                                    ctext,
+                                )
                                 win32gui.SendMessage(chwnd, win32con.BM_CLICK, 0, 0)
                                 clicked = True
                                 break
@@ -201,47 +283,39 @@ class EmulatorController:
         return found
 
     def launch_instance(
-        self, instance_name: str, max_wait_sec: int = 50
+        self, instance_name: str, max_wait_sec: int = _DEFAULT_BOOT_TIMEOUT_SEC
     ) -> bool:
-        """Boots the instance via ldconsole and waits for Android OS to stabilize.
+        """Boots the instance visibly on the interactive desktop and waits for ADB attachment.
 
         Args:
-            instance_name: Name of the instance to boot.
+            instance_name: Name or index of the instance to boot.
             max_wait_sec: Maximum seconds to wait for boot completion.
 
         Returns:
-            True if successfully booted, False if timed out.
+            bool: True if successfully booted, False if timed out.
         """
         if self.is_running(instance_name):
             _logger.info("Instance '%s' is already running.", instance_name)
             return True
 
-        # Ensure COM server is not orphaned before launching
+        # Pre-launch check: flush any orphaned COM server before spawning
         self.sanitize_com_service()
 
         _logger.info("Booting LDPlayer instance '%s' via automated launcher...", instance_name)
-        index_map = {
-            "槍手": 3,
-            "打火機": 4,
-            "弩手": 7,
-            "emulator-5560": 3,
-            "emulator-5562": 4,
-            "emulator-5568": 7,
-        }
-        idx = index_map.get(instance_name, instance_name)
+        idx = resolve_instance_index(instance_name)
 
-        # 1. Trigger via launch_target and direct ldconsole
+        # 1. Trigger via launch_target and launcher script
         try:
             target_file = Path("data/launch_target.txt")
             target_file.parent.mkdir(parents=True, exist_ok=True)
             target_file.write_text(f"{idx}\n", encoding="utf-8")
-            
-            # Direct batch execution
+
+            # Direct batch execution on interactive session
             bat_path = Path("scripts/launch_emulators.bat").resolve()
             if bat_path.exists():
                 subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=False)
 
-            # Elevated Task Scheduler bridge
+            # Elevated Task Scheduler bridge fallback
             subprocess.run(
                 ["schtasks", "/run", "/tn", "LDLaunch"],
                 capture_output=True,
@@ -265,44 +339,37 @@ class EmulatorController:
         _logger.error("Timed out waiting for '%s' to boot.", instance_name)
         return False
 
-
     def quit_instance(self, instance_name: str) -> bool:
-        """Terminates an LDPlayer instance via elevated task bridge.
+        """Terminates an LDPlayer instance via elevated task bridge and CLI.
 
         Args:
             instance_name: Name, index, or device serial of the instance to quit.
 
         Returns:
-            True on successful command execution.
+            bool: True on successful command execution, False on error.
         """
         try:
-            index_map = {
-                "槍手": 3,
-                "打火機": 4,
-                "弩手": 7,
-                "emulator-5560": 3,
-                "emulator-5562": 4,
-                "emulator-5568": 7,
-            }
-            idx = index_map.get(str(instance_name).strip(), instance_name)
+            param = ["--index", str(instance_name)] if str(instance_name).isdigit() else ["--name", str(instance_name)]
+            if str(instance_name).strip() in INSTANCE_INDEX_MAP:
+                param = ["--index", str(INSTANCE_INDEX_MAP[str(instance_name).strip()])]
 
-            # 1. Trigger elevated Task Scheduler bridge
-            target_file = Path("data/launch_target.txt")
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            target_file.write_text(f"quit_{idx}", encoding="utf-8")
-            subprocess.run(
-                ["schtasks", "/run", "/tn", "LDLaunch"],
-                capture_output=True,
-                check=False,
-            )
+            # 1. Trigger elevated Task Scheduler bridge for real ldconsole execution
+            if Path(self.ldconsole_path).name != "fake_ldconsole.exe":
+                idx = resolve_instance_index(instance_name)
+                target_file = Path("data/launch_target.txt")
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                target_file.write_text(f"quit_{idx}", encoding="utf-8")
+                subprocess.run(
+                    ["schtasks", "/run", "/tn", "LDLaunch"],
+                    capture_output=True,
+                    check=False,
+                )
 
-            # 2. Also direct CLI fallback
-            param = ["--index", str(idx)] if str(idx).isdigit() else ["--name", str(idx)]
-            ld_dir = str(Path(self.ldconsole_path).parent)
+            # 2. Direct CLI invocation
             subprocess.run(
                 [self.ldconsole_path, "quit"] + param,
                 capture_output=True,
-                cwd=ld_dir,
+                text=True,
                 check=False,
             )
             return True
@@ -311,27 +378,37 @@ class EmulatorController:
             return False
 
     def force_kill_instance(self, instance_name: str) -> None:
-        """Force-kills specific dnplayer and Ld9BoxHeadless processes for a frozen instance."""
-        index_map = {
-            "槍手": 3,
-            "打火機": 4,
-            "弩手": 7,
-            "emulator-5560": 3,
-            "emulator-5562": 4,
-            "emulator-5568": 7,
-        }
-        idx = index_map.get(str(instance_name).strip(), instance_name)
+        """Force-kills specific dnplayer and Ld9BoxHeadless processes for a frozen instance.
+
+        Args:
+            instance_name: Name, index, or device serial of the frozen instance.
+        """
+        idx = resolve_instance_index(instance_name)
         try:
-            cmd = f"Get-CimInstance Win32_Process -Filter \"name = 'dnplayer.exe'\" | Where-Object {{ $_.CommandLine -like '*index={idx}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+            cmd = (
+                f"Get-CimInstance Win32_Process -Filter \"name = 'dnplayer.exe'\" | "
+                f"Where-Object {{ $_.CommandLine -like '*index={idx}*' }} | "
+                f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+            )
             subprocess.run(["powershell", "-NoProfile", "-Command", cmd], capture_output=True, check=False)
-            cmd_vbox = f"Get-CimInstance Win32_Process -Filter \"name = 'Ld9BoxHeadless.exe'\" | Where-Object {{ $_.CommandLine -like '*leidian{idx}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+            cmd_vbox = (
+                f"Get-CimInstance Win32_Process -Filter \"name = 'Ld9BoxHeadless.exe'\" | "
+                f"Where-Object {{ $_.CommandLine -like '*leidian{idx}*' }} | "
+                f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"
+            )
             subprocess.run(["powershell", "-NoProfile", "-Command", cmd_vbox], capture_output=True, check=False)
         except Exception as err:
             _logger.debug("Force kill error for instance %s: %s", instance_name, err)
 
-
     def quit_all(self) -> bool:
-        """Terminates all running LDPlayer instances to preserve 0% idle power."""
+        """Terminates all running LDPlayer instances.
+
+        Sequences graceful shutdown, process termination, and COM service teardown
+        to avoid lingering mutex locks.
+
+        Returns:
+            bool: True if teardown commands completed, False on error.
+        """
         try:
             target_file = Path("data/launch_target.txt")
             target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -349,23 +426,34 @@ class EmulatorController:
                 check=False,
             )
             # 1. Allow guest OS and virtual disks to sync cleanly
-            time.sleep(3.0)
+            time.sleep(_TEARDOWN_GRACE_PERIOD_SEC)
             subprocess.run(["taskkill", "/f", "/im", "dnplayer.exe"], capture_output=True, check=False)
             subprocess.run(["taskkill", "/f", "/im", "Ld9BoxHeadless.exe"], capture_output=True, check=False)
 
             # 2. Terminate COM server and wait for kernel mutex to release
             subprocess.run(["taskkill", "/f", "/im", "Ld9BoxSVC.exe"], capture_output=True, check=False)
-            time.sleep(2.0)
+            time.sleep(_POST_TEARDOWN_COM_DELAY_SEC)
             return True
         except Exception as err:
             _logger.error("Error running quitall: %s", err)
             return False
 
-    def launch_all(self, max_wait_sec: int = 60) -> bool:
-        """Cold-boots all 3 tracker instances (槍手, 打火機, 弩手) concurrently."""
+    def launch_all(
+        self, max_wait_sec: int = _ALL_BOOT_TIMEOUT_SEC
+    ) -> bool:
+        """Cold-boots all 3 tracker instances (槍手, 打火機, 弩手) concurrently.
+
+        Args:
+            max_wait_sec: Maximum seconds to wait for all 3 instances to attach.
+
+        Returns:
+            bool: True if all 3 instances attached to ADB, False otherwise.
+        """
         from driver.adb_driver import AdbDriver
+
+        target_serials = ("emulator-5560", "emulator-5562", "emulator-5568")
         devs = AdbDriver.list_attached_devices()
-        if all(d in devs for d in ("emulator-5560", "emulator-5562", "emulator-5568")):
+        if all(d in devs for d in target_serials):
             _logger.info("All 3 tracker emulators are already running.")
             return True
 
@@ -377,7 +465,7 @@ class EmulatorController:
             target_file = Path("data/launch_target.txt")
             target_file.parent.mkdir(parents=True, exist_ok=True)
             target_file.write_text("all\n", encoding="utf-8")
-            
+
             # 1. Direct interactive session invocation
             bat_path = Path("scripts/launch_emulators.bat").resolve()
             if bat_path.exists():
@@ -395,9 +483,8 @@ class EmulatorController:
         start_t = time.time()
         while time.time() - start_t < max_wait_sec:
             self.check_and_dismiss_error_dialogs()
-            from driver.adb_driver import AdbDriver
             devs = AdbDriver.list_attached_devices()
-            if all(d in devs for d in ("emulator-5560", "emulator-5562", "emulator-5568")):
+            if all(d in devs for d in target_serials):
                 _logger.info("All 3 emulators attached to ADB. Waiting 10s for OS to stabilize...")
                 time.sleep(10)
                 return True
@@ -406,14 +493,12 @@ class EmulatorController:
         _logger.warning("Timed out waiting for all 3 emulators to attach.")
         return False
 
-
-
     def list_instances(self) -> List[Dict[str, Any]]:
         """Lists all registered LDPlayer instances and their statuses.
 
         Returns:
-            List of dicts containing 'index', 'name', 'top_hwnd', 'bind_hwnd',
-            'is_running', 'pid', 'vbox_pid'.
+            List[Dict[str, Any]]: List of dicts containing 'index', 'name',
+            'top_hwnd', 'bind_hwnd', 'is_running', 'pid', 'vbox_pid'.
         """
         try:
             res = subprocess.run(
@@ -442,14 +527,21 @@ class EmulatorController:
 
 
 def set_windows_power_plan(plan_name: str = "ultimate") -> bool:
-    """Switches the active Windows power plan ('ultimate' or 'balanced')."""
-    guid_map = {
-        "ultimate": "ee8b14d0-ad4d-4345-8f52-928a761433ff",
-        "balanced": "381b4222-f694-41f0-9685-ff5bb260df2e",
-    }
-    guid = guid_map.get(plan_name.lower(), plan_name)
+    """Switches the active Windows power plan.
+
+    Args:
+        plan_name: Power plan alias ('ultimate' or 'balanced') or explicit GUID.
+
+    Returns:
+        bool: True if the power scheme was successfully activated, False otherwise.
+    """
+    guid = _POWER_PLAN_GUIDS.get(plan_name.lower(), plan_name)
     try:
-        res = subprocess.run(["powercfg", "/setactive", guid], capture_output=True, check=False)
+        res = subprocess.run(
+            ["powercfg", "/setactive", guid],
+            capture_output=True,
+            check=False,
+        )
         return res.returncode == 0
     except Exception as err:
         _logger.debug("Error switching power plan to %s: %s", plan_name, err)

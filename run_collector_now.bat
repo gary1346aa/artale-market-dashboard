@@ -4,7 +4,7 @@ cd /d "%~dp0"
 echo =======================================================
 echo    Artale Market Tracker - Due Collection Run
 echo    Mode: Both (Asks + Trades) ^| Target: Due Items Only
-echo    Engine: 100%% Background Parallel ADB (No PC interruption)
+echo    Engine: Parallel ADB
 echo =======================================================
 echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_auto.ps1" -TargetTab both -Due

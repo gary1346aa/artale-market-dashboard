@@ -5,7 +5,7 @@ Artale Free Market (自由市場) using a reactive screen state machine:
 1. Active Screen State Classification (12 discrete verified visual states)
 2. Home screen popup / ad suppression (ESC / KEYCODE_BACK)
 3. Dynamic OCR selection of 'Artale (繁體中文版)' (excluding 'Lounge')
-4. Closed-loop state progression until Free Market template match (100%)
+4. Closed-loop state progression until Free Market template match
 """
 
 from enum import Enum
@@ -31,7 +31,7 @@ from config.coordinates import (
     POS_MSW_SEARCH_INPUT,
     POS_SELECT_CHARACTER_BUTTON,
 )
-from config.settings import ASSETS_DIR
+from config.settings import ASSETS_DIR, DEVICE_INSTANCE_MAP
 from driver.adb_driver import AdbDriver
 from driver.emulator_controller import EmulatorController
 
@@ -226,22 +226,24 @@ class GameBootstrapper:
         controller: Optional[EmulatorController] = None,
         instance_name: Optional[str] = None,
     ) -> None:
-        """Initializes GameBootstrapper with ADB driver and optional controller."""
+        """Initializes GameBootstrapper with ADB driver and optional controller.
+
+        Args:
+            adb: Active AdbDriver instance for screen capture and touch input.
+            controller: Optional EmulatorController instance. Defaults to a new instance.
+            instance_name: Optional LDPlayer instance name (e.g. '槍手'). If omitted,
+                automatically resolved from adb.device_id.
+        """
         self.adb = adb
         self.controller = controller or EmulatorController()
-        if not instance_name:
-            dev_map = {
-                "emulator-5560": "槍手",
-                "emulator-5562": "打火機",
-                "emulator-5568": "弩手",
-            }
-            self.instance_name = dev_map.get(adb.device_id, instance_name)
-        else:
-            self.instance_name = instance_name
-
+        self.instance_name = instance_name or DEVICE_INSTANCE_MAP.get(adb.device_id)
 
     def restart_instance_clean(self) -> bool:
-        """Kills and relaunches the LDPlayer instance to guarantee a 100% clean baseline."""
+        """Kills and relaunches the LDPlayer instance to ensure fresh state.
+
+        Returns:
+            bool: True if instance was successfully restarted and ready, False otherwise.
+        """
         dev = self.adb.device_id
         if not self.instance_name:
             _logger.info("[%s] No instance_name specified. Falling back to return_home_and_cleanup.", dev)
@@ -266,7 +268,7 @@ class GameBootstrapper:
         return True
 
     def return_home_and_cleanup(self) -> None:
-        """Closes opening apps, returns to Android home screen, and dismisses popups."""
+        """Closes running apps, returns to Android home screen, and dismisses popups."""
         dev = self.adb.device_id
         _logger.info("[%s] Closing opening apps and returning to home...", dev)
         self.adb._run_adb("shell", "am", "force-stop", MSW_PACKAGE_NAME)
@@ -284,6 +286,13 @@ class GameBootstrapper:
 
         Checks the actual screen state before every action and transitions
         reactively.
+
+        Args:
+            clean_reboot: Whether to force-kill and restart the emulator before bootstrapping.
+            max_timeout_sec: Maximum seconds allowed to reach Free Market before aborting.
+
+        Returns:
+            bool: True if successfully confirmed in Free Market, False if timed out.
         """
         dev = self.adb.device_id
         _logger.info("[%s] Starting reactive closed-loop bootstrap to Free Market...", dev)

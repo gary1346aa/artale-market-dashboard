@@ -1,7 +1,7 @@
-"""High-performance Android Debug Bridge (ADB) driver for game automation.
+"""Android Debug Bridge (ADB) driver for game automation.
 
-Enables zero-focus, zero-mouse-interference game automation with direct
-SurfaceFlinger memory frame dumps, fast input injection, and ADBKeyBoard IME.
+Provides screen capture, input event injection, and IME text input
+using Android Debug Bridge (adb.exe).
 """
 
 import base64
@@ -22,7 +22,7 @@ from config.coordinates import (
     POS_MENU_BUTTON,
     POS_STOP_DIALOG,
 )
-from config.settings import AUCTION_COOLDOWN_FILE, DEFAULT_ADB
+from config.settings import ASSETS_DIR, AUCTION_COOLDOWN_FILE, DEFAULT_ADB
 
 _logger = logging.getLogger(__name__)
 
@@ -228,9 +228,30 @@ class AdbDriver:
         """Sends an Android keycode event (e.g. 111 for ESC, 66 for ENTER)."""
         self._run_adb("shell", "input", "keyevent", str(code))
 
+    def touch(self, x: int, y: int, duration_ms: int = 150) -> None:
+        """Simulates human finger touch press with duration in milliseconds."""
+        self._run_adb(
+            "shell",
+            "input",
+            "swipe",
+            str(int(x)),
+            str(int(y)),
+            str(int(x)),
+            str(int(y)),
+            str(int(duration_ms)),
+        )
+
     def press_esc(self) -> None:
         """Sends ESC keyevent."""
         self.keyevent(111)
+
+    def send_esc(self, count: int = 1, delay_sec: float = 0.4) -> None:
+        """Sends BACK / ESC keyevents to dismiss popups and dialogs."""
+        for _ in range(count):
+            self.keyevent(4)  # KEYCODE_BACK
+            self.keyevent(111)  # KEYCODE_ESCAPE
+            if delay_sec > 0:
+                time.sleep(delay_sec)
 
     def press_enter(self) -> None:
         """Sends ENTER keyevent."""
@@ -459,12 +480,47 @@ class AdbDriver:
             _logger.debug("Error checking is_auction_open: %s", err)
             return False
 
-    def is_free_market(self, frame: Optional[Image.Image] = None) -> bool:
-        """Verifies if the character is standing in the Free Market map."""
+    def is_free_market(
+        self,
+        frame: Optional[Image.Image] = None,
+        min_confidence: float = 0.85,
+    ) -> bool:
+        """Verifies if the character is standing in the Free Market map.
+
+        Uses template matching against assets/free_market_indicator.png,
+        falling back to in-game telemetry pixel checks.
+        """
         if frame is None:
             frame = self.screencap()
         if not frame or frame.width < 1000 or frame.height < 600:
             return False
+
+        # 1. High-precision template match against minimap header
+        indicator_path = ASSETS_DIR / "free_market_indicator.png"
+        if indicator_path.exists():
+            try:
+                import cv2
+                import numpy as np
+
+                # Minimap header ROI: (x: 0..200, y: 0..150)
+                roi_crop = frame.crop((0, 0, 200, 150))
+                roi_cv = cv2.cvtColor(np.array(roi_crop), cv2.COLOR_RGB2BGR)
+                tmpl_cv = cv2.imread(str(indicator_path))
+                if (
+                    tmpl_cv is not None
+                    and roi_cv.shape[0] >= tmpl_cv.shape[0]
+                    and roi_cv.shape[1] >= tmpl_cv.shape[1]
+                ):
+                    res = cv2.matchTemplate(
+                        roi_cv, tmpl_cv, cv2.TM_CCOEFF_NORMED
+                    )
+                    _, max_val, _, _ = cv2.minMaxLoc(res)
+                    if max_val >= min_confidence:
+                        return True
+            except Exception as err:
+                _logger.debug("Template match error in is_free_market: %s", err)
+
+        # 2. Telemetry pixel fallback
         try:
             p_hp = frame.getpixel((600, 647))[:3]
             p_mp = frame.getpixel((600, 668))[:3]

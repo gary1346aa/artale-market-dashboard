@@ -9,7 +9,7 @@ import logging
 import os
 from pathlib import Path
 import sys
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 # ==============================================================================
 # Filesystem Paths
@@ -50,6 +50,23 @@ DAILY_SEARCH_LIMIT: int = 500
 RESET_HOUR: int = 8  # Daily search quota resets at 08:00 AM server time
 
 DEFAULT_INSTANCES: List[str] = ["祈禱機", "槍手", "打火機", "弩手"]
+
+INSTANCE_INDEX_MAP: Dict[str, int] = {
+    "祈禱機": 0,
+    "槍手": 3,
+    "打火機": 4,
+    "弩手": 7,
+}
+
+INSTANCE_DEVICE_MAP: Dict[str, str] = {
+    "槍手": "emulator-5560",
+    "打火機": "emulator-5562",
+    "弩手": "emulator-5568",
+}
+
+DEVICE_INSTANCE_MAP: Dict[str, str] = {
+    device_id: name for name, device_id in INSTANCE_DEVICE_MAP.items()
+}
 
 # ==============================================================================
 # Quota Timing Utilities

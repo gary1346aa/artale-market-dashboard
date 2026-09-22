@@ -253,7 +253,7 @@ function Show-Toast([string]$msg) {
 Write-Log '=========================================='
 Write-Log 'Artale Market Tracker Daemon Started.'
 Write-Log 'Schedule: Initial Run Immediately -> Hourly (:00)'
-Write-Log 'Mode: 100% Silent Background (Both + Due, No Prompts)'
+Write-Log 'Mode: Non-Interactive Scheduled Run (Both + Due)'
 Write-Log '=========================================='
 
 # Set system to Balanced power scheme during daemon idle
@@ -286,7 +286,7 @@ while ($true) {
             $dueList = @($dueInfo.due_items)
 
             if ($dueCount -eq 0) {
-                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date. Zero-power idle maintained (emulators remain closed)."
+                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date. Emulators not started."
             } else {
                 $sample = if ($dueList.Count -gt 6) { ($dueList[0..5] -join ', ') + " (+$(($dueList.Count - 6)) more)" } else { $dueList -join ', ' }
                 Write-Log "Watchlist Check: $dueCount of $totalCount item(s) due to update: [$sample]"

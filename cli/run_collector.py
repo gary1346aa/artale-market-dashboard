@@ -35,6 +35,13 @@ def main() -> None:
         help="Operating mode (legacy compatibility).",
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        default="auto",
+        choices=["auto", "manual", "catalog", "passive"],
+        help="Operating mode (legacy compatibility).",
+    )
+    parser.add_argument(
         "--query",
         type=str,
         help="Collect market data for a single specific item name.",
@@ -83,6 +90,16 @@ def main() -> None:
         action="store_true",
         help="Continuously poll and collect due items on schedule.",
     )
+    parser.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="Auto-launch and bootstrap instance to Free Market if offline or not in market.",
+    )
+    parser.add_argument(
+        "--reboot",
+        action="store_true",
+        help="Kill and cleanly reboot the emulator instance before bootstrapping.",
+    )
 
     args = parser.parse_args()
     setup_logging(level=logging.INFO)
@@ -90,7 +107,12 @@ def main() -> None:
     # 1. Single Item Query Mode
     if args.query:
         _logger.info("Executing single item collection: '%s'", args.query)
-        collector = MarketCollector(instance_name=args.instance, use_adb=True)
+        collector = MarketCollector(
+            instance_name=args.instance,
+            use_adb=True,
+            auto_bootstrap=args.bootstrap,
+            clean_reboot=args.reboot,
+        )
         try:
             collector.run_query_collection(
                 args.query, max_pages=args.max_pages, target_tab=args.tab
@@ -121,7 +143,10 @@ def main() -> None:
                         )
                     else:
                         collector = MarketCollector(
-                            instance_name=args.instance, use_adb=True
+                            instance_name=args.instance,
+                            use_adb=True,
+                            auto_bootstrap=args.bootstrap,
+                            clean_reboot=args.reboot,
                         )
                         try:
                             collector.run_catalog_scan(
@@ -156,7 +181,10 @@ def main() -> None:
                 )
             else:
                 collector = MarketCollector(
-                    instance_name=args.instance, use_adb=True
+                    instance_name=args.instance,
+                    use_adb=True,
+                    auto_bootstrap=args.bootstrap,
+                    clean_reboot=args.reboot,
                 )
                 try:
                     collector.run_catalog_scan(
@@ -186,7 +214,10 @@ def main() -> None:
             )
         else:
             collector = MarketCollector(
-                instance_name=args.instance, use_adb=True
+                instance_name=args.instance,
+                use_adb=True,
+                auto_bootstrap=args.bootstrap,
+                clean_reboot=args.reboot,
             )
             try:
                 collector.run_catalog_scan(

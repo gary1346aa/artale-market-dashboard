@@ -14,28 +14,12 @@ if "%TARGET%"=="quit_all" goto :quit_all
 if "%TARGET:~0,5%"=="quit_" goto :quit_single
 
 :launch_single
-REM Check if no emulators running but Ld9BoxSVC is orphaned
-tasklist /fi "imagename eq dnplayer.exe" 2>nul | find /i "dnplayer.exe" >nul
-if "%ERRORLEVEL%"=="1" (
-    tasklist /fi "imagename eq Ld9BoxSVC.exe" 2>nul | find /i "Ld9BoxSVC.exe" >nul
-    if "%ERRORLEVEL%"=="0" (
-        taskkill /f /im Ld9BoxSVC.exe >nul 2>&1
-        ping 127.0.0.1 -n 3 >nul
-    )
-)
+call :sanitize_com
 start "" "C:\LDPlayer\LDPlayer9\ldconsole.exe" launch --index %TARGET%
 goto :done
 
 :launch_all
-REM Check if no emulators running but Ld9BoxSVC is orphaned
-tasklist /fi "imagename eq dnplayer.exe" 2>nul | find /i "dnplayer.exe" >nul
-if "%ERRORLEVEL%"=="1" (
-    tasklist /fi "imagename eq Ld9BoxSVC.exe" 2>nul | find /i "Ld9BoxSVC.exe" >nul
-    if "%ERRORLEVEL%"=="0" (
-        taskkill /f /im Ld9BoxSVC.exe >nul 2>&1
-        ping 127.0.0.1 -n 3 >nul
-    )
-)
+call :sanitize_com
 start "" "C:\LDPlayer\LDPlayer9\ldconsole.exe" launch --index 3
 ping 127.0.0.1 -n 4 >nul
 start "" "C:\LDPlayer\LDPlayer9\ldconsole.exe" launch --index 4
@@ -56,6 +40,17 @@ taskkill /f /im Ld9BoxHeadless.exe >nul 2>&1
 taskkill /f /im Ld9BoxSVC.exe >nul 2>&1
 ping 127.0.0.1 -n 3 >nul
 goto :done
+
+:sanitize_com
+tasklist /fi "imagename eq dnplayer.exe" 2>nul | find /i "dnplayer.exe" >nul
+if "%ERRORLEVEL%"=="1" (
+    tasklist /fi "imagename eq Ld9BoxSVC.exe" 2>nul | find /i "Ld9BoxSVC.exe" >nul
+    if "%ERRORLEVEL%"=="0" (
+        taskkill /f /im Ld9BoxSVC.exe >nul 2>&1
+        ping 127.0.0.1 -n 3 >nul
+    )
+)
+exit /b 0
 
 :done
 exit /b 0

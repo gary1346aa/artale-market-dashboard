@@ -14,3 +14,4 @@ debug_crops/
 env/
 scratch/
 bazel-*
+backups/

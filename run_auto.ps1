@@ -74,15 +74,12 @@ if ($Due) {
         $nextItem = $dueInfo.next_item
         $dueItems = @($dueInfo.due_items)
 
-        Write-Host "=======================================================" -ForegroundColor Yellow
         if ($dueCount -eq 0) {
-            Write-Host "  Watchlist Status: 0 of $totalCount items due for update. All up to date!" -ForegroundColor Green
+            Write-Host "Watchlist Status: 0 of $totalCount items due. All up to date." -ForegroundColor Green
         } else {
-            Write-Host "  Watchlist Status: $dueCount of $totalCount item(s) due for update." -ForegroundColor Yellow
             $sample = if ($dueItems.Count -gt 6) { ($dueItems[0..5] -join ', ') + " (+$(($dueItems.Count - 6)) more)" } else { $dueItems -join ', ' }
-            Write-Host "  Items to scan: [$sample]" -ForegroundColor Cyan
+            Write-Host "Watchlist Status: $dueCount of $totalCount item(s) due: [$sample]" -ForegroundColor Cyan
         }
-        Write-Host "=======================================================" -ForegroundColor Yellow
     } catch {
     }
 }
@@ -129,12 +126,8 @@ function Set-WindowsPowerPlan([string]$planName) {
         }
         if ($targetGuid) {
             powercfg /setactive $targetGuid
-            $pMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Windows Power Scheme switched to: $planName ($targetGuid)"
-            Write-Host $pMsg -ForegroundColor Magenta
-            $pMsg | Out-File $logFile -Append -Encoding utf8
         }
     } catch {
-        Write-Warning "Failed to set power scheme: $_"
     }
 }
 

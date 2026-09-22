@@ -250,18 +250,13 @@ function Show-Toast([string]$msg) {
     }
 }
 
-Write-Log '=========================================='
 Write-Log 'Artale Market Tracker Daemon Started.'
-Write-Log 'Schedule: Initial Run Immediately -> Hourly (:00)'
-Write-Log 'Mode: Non-Interactive Scheduled Run (Both + Due)'
-Write-Log '=========================================='
 
 # Set system to Balanced power scheme during daemon idle
 try { powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e } catch {}
 
 # Run immediately once upon startup, then follow standard hourly schedule
 $nextPrompt = (Get-Date).AddSeconds(-1)
-Write-Log "Initial scan starting immediately. Subsequent runs will align to hourly (:00) schedule."
 
 function Get-DueStatus() {
     $pyCmd = "import sys; sys.stdout.reconfigure(encoding='utf-8'); import json; from core.watchlist import get_due_items; due, wait_sec, next_item = get_due_items(); wl = json.load(open('items_watchlist.json', 'r', encoding='utf-8')); print(json.dumps({'due_count': len(due), 'total_count': len(wl), 'wait_min': round(wait_sec/60, 1), 'next_item': next_item, 'due_items': due}, ensure_ascii=False))"
@@ -286,15 +281,15 @@ while ($true) {
             $dueList = @($dueInfo.due_items)
 
             if ($dueCount -eq 0) {
-                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date. Emulators not started."
+                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date."
             } else {
                 $sample = if ($dueList.Count -gt 6) { ($dueList[0..5] -join ', ') + " (+$(($dueList.Count - 6)) more)" } else { $dueList -join ', ' }
                 Write-Log "Watchlist Check: $dueCount of $totalCount item(s) due to update: [$sample]"
-                Write-Log "Starting collection for $dueCount due item(s) with AutoPowerSave (Visible + Clean Power-Down)..."
+                Write-Log "Starting collection for $dueCount due item(s)..."
                 try {
                     & "$workDir\run_auto.ps1" -TargetTab both -Due -AutoPowerSave
                     if ($LASTEXITCODE -eq 0) {
-                        Write-Log "Collection ($dueCount items) and sync completed successfully!"
+                        Write-Log "Collection ($dueCount items) and sync completed."
                     } else {
                         Write-Log "Collection exited with code $LASTEXITCODE. Check collector_run.log for details."
                     }
@@ -303,11 +298,11 @@ while ($true) {
                 }
             }
         } else {
-            Write-Log "Scheduled target reached ($($now.ToString('HH:mm'))). Starting collection (Both tabs, due items, AutoPowerSave)..."
+            Write-Log "Scheduled target reached ($($now.ToString('HH:mm'))). Starting collection..."
             try {
                 & "$workDir\run_auto.ps1" -TargetTab both -Due -AutoPowerSave
                 if ($LASTEXITCODE -eq 0) {
-                    Write-Log "Collection and sync completed successfully!"
+                    Write-Log "Collection and sync completed."
                 } else {
                     Write-Log "Collection exited with code $LASTEXITCODE. Check collector_run.log for details."
                 }

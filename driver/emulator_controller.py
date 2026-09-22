@@ -8,6 +8,7 @@ process teardown sequencing, and modal dialog error handling.
 import logging
 from pathlib import Path
 import subprocess
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -40,6 +41,7 @@ _TEARDOWN_GRACE_PERIOD_SEC: float = 3.0
 _POST_TEARDOWN_COM_DELAY_SEC: float = 2.0
 _DEFAULT_BOOT_TIMEOUT_SEC: int = 50
 _ALL_BOOT_TIMEOUT_SEC: int = 60
+_LAUNCH_DISPATCH_LOCK = threading.Lock()
 
 # Modal error dialog keywords and recovery button texts
 _ERROR_DIALOG_KEYWORDS: Tuple[str, ...] = ("COM", "無效", "重試", "載入失敗")
@@ -275,6 +277,69 @@ class EmulatorController:
 
         return found
 
+    def trigger_launch(self, instance_name: str) -> bool:
+        """Dispatches the boot command for an LDPlayer instance without waiting for readiness.
+
+        Args:
+            instance_name: Name or index of the instance to boot.
+
+        Returns:
+            bool: True if launch was dispatched, False on error.
+        """
+        if self.is_running(instance_name):
+            _logger.info(f"Instance '{instance_name}' is already running.")
+            return True
+
+        self.sanitize_com_service()
+        _logger.info(f"Triggering boot for LDPlayer instance '{instance_name}'...")
+        idx = resolve_instance_index(instance_name)
+
+        try:
+            with _LAUNCH_DISPATCH_LOCK:
+                target_file = Path("data/launch_target.txt")
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                target_file.write_text(f"{idx}\n", encoding="utf-8")
+
+                bat_path = Path("scripts/launch_emulators.bat").resolve()
+                if bat_path.exists():
+                    subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=False)
+
+                subprocess.run(
+                    ["schtasks", "/run", "/tn", "LDLaunch"],
+                    capture_output=True,
+                    check=False,
+                )
+            return True
+        except Exception as err:
+            _logger.error(f"Launch trigger error for '{instance_name}': {err}")
+            return False
+
+    def wait_for_ready(
+        self, instance_name: str, max_wait_sec: int = _DEFAULT_BOOT_TIMEOUT_SEC
+    ) -> bool:
+        """Polls until the instance is attached to ADB and stabilized.
+
+        Args:
+            instance_name: Name or index of the instance.
+            max_wait_sec: Maximum seconds to wait.
+
+        Returns:
+            bool: True if instance is running and stabilized, False if timed out.
+        """
+        start_t = time.time()
+        while time.time() - start_t < max_wait_sec:
+            self.check_and_dismiss_error_dialogs()
+            if self.is_running(instance_name):
+                _logger.info(
+                    f"Instance '{instance_name}' running. Waiting 15s for OS to settle..."
+                )
+                time.sleep(15)
+                return True
+            time.sleep(2)
+
+        _logger.error(f"Timed out waiting for '{instance_name}' to boot.")
+        return False
+
     def launch_instance(
         self, instance_name: str, max_wait_sec: int = _DEFAULT_BOOT_TIMEOUT_SEC
     ) -> bool:
@@ -291,45 +356,9 @@ class EmulatorController:
             _logger.info(f"Instance '{instance_name}' is already running.")
             return True
 
-        # Pre-launch check: flush any orphaned COM server before spawning
-        self.sanitize_com_service()
-
-        _logger.info(f"Booting LDPlayer instance '{instance_name}'...")
-        idx = resolve_instance_index(instance_name)
-
-        # 1. Trigger via launch_target and launcher script
-        try:
-            target_file = Path("data/launch_target.txt")
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            target_file.write_text(f"{idx}\n", encoding="utf-8")
-
-            # Direct batch execution on interactive session
-            bat_path = Path("scripts/launch_emulators.bat").resolve()
-            if bat_path.exists():
-                subprocess.Popen(["cmd.exe", "/c", str(bat_path)], shell=False)
-
-            # Elevated Task Scheduler bridge fallback
-            subprocess.run(
-                ["schtasks", "/run", "/tn", "LDLaunch"],
-                capture_output=True,
-                check=False,
-            )
-        except Exception as err:
-            _logger.debug(f"Task scheduler trigger failed: {err}")
-
-        start_t = time.time()
-        while time.time() - start_t < max_wait_sec:
-            self.check_and_dismiss_error_dialogs()
-            if self.is_running(instance_name):
-                _logger.info(
-                    f"Instance '{instance_name}' running. Waiting 15s for OS to settle..."
-                )
-                time.sleep(15)
-                return True
-            time.sleep(2)
-
-        _logger.error(f"Timed out waiting for '{instance_name}' to boot.")
-        return False
+        if not self.trigger_launch(instance_name):
+            return False
+        return self.wait_for_ready(instance_name, max_wait_sec=max_wait_sec)
 
     def quit_instance(self, instance_name: str) -> bool:
         """Terminates an LDPlayer instance via elevated task bridge and CLI.
@@ -348,14 +377,15 @@ class EmulatorController:
             # 1. Trigger elevated Task Scheduler bridge for real ldconsole execution
             if Path(self.ldconsole_path).name != "fake_ldconsole.exe":
                 idx = resolve_instance_index(instance_name)
-                target_file = Path("data/launch_target.txt")
-                target_file.parent.mkdir(parents=True, exist_ok=True)
-                target_file.write_text(f"quit_{idx}", encoding="utf-8")
-                subprocess.run(
-                    ["schtasks", "/run", "/tn", "LDLaunch"],
-                    capture_output=True,
-                    check=False,
-                )
+                with _LAUNCH_DISPATCH_LOCK:
+                    target_file = Path("data/launch_target.txt")
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    target_file.write_text(f"quit_{idx}", encoding="utf-8")
+                    subprocess.run(
+                        ["schtasks", "/run", "/tn", "LDLaunch"],
+                        capture_output=True,
+                        check=False,
+                    )
 
             # 2. Direct CLI invocation
             subprocess.run(

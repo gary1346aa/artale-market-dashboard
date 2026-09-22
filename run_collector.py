@@ -176,50 +176,22 @@ def main() -> None:
                 )
                 return
 
-        # 1. Cold-Boot phase
-        if args.cold_boot:
-            if args.instance:
-                _logger.info(f"Cold-booting instance '{args.instance}'...")
-                ctrl.launch_instance(args.instance)
-            else:
-                _logger.info("Cold-booting all tracker emulators...")
-                ctrl.launch_all()
-
-        # 2. Bootstrap phase
-        if args.bootstrap:
-            from driver.adb_driver import AdbDriver
-            if args.instance:
-                from pipeline.collector import INSTANCE_TO_DEVICE
-                dev = INSTANCE_TO_DEVICE.get(args.instance, args.instance)
-                target_devs = [dev]
-            else:
-                attached = AdbDriver.list_attached_devices()
-                target_devs = [d for d in ["emulator-5560", "emulator-5562", "emulator-5568"] if d in attached] or attached
-            if not target_devs:
-                _logger.warning("No attached devices found to bootstrap.")
-            else:
-                healthy_devices = parallel_bootstrap_devices(target_devs)
-                if not healthy_devices:
-                    _logger.error("No devices reached Free Market. Aborting collection batch.")
-                    return
-
-        # Helper to select single vs parallel scanner
-        def get_scanner() -> Union[MarketCollector, ParallelCollector]:
-            if args.instance is None and (args.parallel is None or args.parallel != 1):
-                max_w = (
-                    args.parallel
-                    if (args.parallel is not None and args.parallel > 0)
-                    else None
-                )
-                return ParallelCollector(
-                    max_workers=max_w,
-                    devices=healthy_devices,
-                    use_adb=True,
-                )
-            return MarketCollector(
-                window_mgr=target_win_mgr,
-                instance_name=args.instance,
+        # Helper to select single vs parallel scanner with autonomous per-instance lifecycle
+        def get_scanner() -> ParallelCollector:
+            max_w = (
+                args.parallel
+                if (args.parallel is not None and args.parallel > 0)
+                else None
+            )
+            insts = [args.instance] if args.instance else None
+            return ParallelCollector(
+                max_workers=max_w,
+                instances=insts,
                 use_adb=True,
+                cold_boot=args.cold_boot,
+                bootstrap=args.bootstrap,
+                kill_after=args.kill_after,
+                controller=ctrl,
             )
 
         # 1. Passive Mode
@@ -232,6 +204,20 @@ def main() -> None:
 
         # 2. Single Item Query Mode
         if args.query:
+            inst = args.instance or "槍手"
+            if args.cold_boot:
+                _logger.info(f"Cold-booting instance '{inst}'...")
+                ctrl.launch_instance(inst)
+            if args.bootstrap:
+                from driver.adb_driver import AdbDriver
+                from driver.game_bootstrapper import GameBootstrapper
+                from pipeline.collector import INSTANCE_TO_DEVICE
+                dev = INSTANCE_TO_DEVICE.get(inst, "emulator-5560")
+                bootstrapper = GameBootstrapper(
+                    AdbDriver(device_id=dev), controller=ctrl, instance_name=inst
+                )
+                bootstrapper.bootstrap_to_free_market()
+
             collector = MarketCollector(
                 window_mgr=target_win_mgr,
                 instance_name=args.instance,
@@ -244,6 +230,8 @@ def main() -> None:
                 )
             finally:
                 collector.shutdown()
+                if args.kill_after:
+                    ctrl.quit_instance(inst)
             return
 
         # 3. Due Items Collection Mode
@@ -350,11 +338,13 @@ def main() -> None:
     finally:
         if args.kill_after:
             if args.instance:
-                _logger.info(f"Batch finished. Terminating instance '{args.instance}'...")
-                ctrl.quit_instance(args.instance)
+                if ctrl.is_running(args.instance):
+                    ctrl.quit_instance(args.instance)
             else:
-                _logger.info("Batch finished. Terminating emulator instances...")
-                ctrl.quit_all()
+                from driver.adb_driver import AdbDriver
+                attached = AdbDriver.list_attached_devices()
+                if any(d in attached for d in ["emulator-5560", "emulator-5562", "emulator-5568"]):
+                    ctrl.quit_all()
 
 
 if __name__ == "__main__":

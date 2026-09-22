@@ -217,7 +217,7 @@
   },
   "凍結加持器": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:03:50"
+    "last_updated": "2026-09-22 19:03:55"
   },
   "漫天花雨": {
     "tier": 3,
@@ -225,67 +225,171 @@
   },
   "高效能喇叭UP": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:03:52"
+    "last_updated": "2026-09-22 19:03:58"
   },
   "突襲額外獎勵票券": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:03:54"
+    "last_updated": "2026-09-22 19:03:59"
   },
   "飄雪結晶": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:09"
+    "last_updated": "2026-09-22 19:04:14"
+  },
+  "拳套攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
   },
   "拳套攻擊力卷軸30%": {
     "tier": 2,
     "last_updated": "2026-09-22 16:04:41"
   },
+  "拳套攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "弓攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "弓攻擊力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:02"
+  },
+  "弓攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "弩攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
   },
   "弩攻擊力卷軸30%": {
     "tier": 2,
     "last_updated": "2026-09-22 16:04:55"
   },
+  "弩攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "單手劍攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "單手劍攻擊力卷軸30%": {
     "tier": 2,
     "last_updated": "2026-09-22 16:04:59"
+  },
+  "單手劍攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "雙手劍攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
   },
   "雙手劍攻擊力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:06"
   },
+  "雙手劍攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "矛攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "矛攻擊力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:20"
+  },
+  "矛攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "槍攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
   },
   "槍攻擊力卷軸30%": {
     "tier": 2,
     "last_updated": "2026-09-22 16:05:00"
   },
+  "槍攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "短劍攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "短劍攻擊力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:13"
+  },
+  "短劍攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "手套攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
   },
   "手套攻擊力卷軸30%": {
     "tier": 2,
     "last_updated": "2026-09-22 16:05:13"
   },
+  "手套攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "指虎攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "指虎攻擊力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:17"
+  },
+  "指虎攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "火槍攻擊力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
   },
   "火槍攻擊力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:32"
   },
+  "火槍攻擊力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "短杖魔力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "短杖魔力卷軸30%": {
     "tier": 4,
     "last_updated": "2026-09-22 04:27:37"
   },
+  "短杖魔力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
+  },
+  "長杖魔力卷軸10%": {
+    "tier": 3,
+    "last_updated": null
+  },
   "長杖魔力卷軸30%": {
     "tier": 3,
     "last_updated": "2026-09-22 17:06:29"
+  },
+  "長杖魔力卷軸60%": {
+    "tier": 3,
+    "last_updated": null
   },
   "鞋子跳躍力卷軸30%": {
     "tier": 3,
@@ -293,7 +397,7 @@
   },
   "耳環敏捷卷軸60%": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:11"
+    "last_updated": "2026-09-22 19:04:16"
   },
   "耳環敏捷卷軸70%": {
     "tier": 2,
@@ -321,31 +425,31 @@
   },
   "時間碎片": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:14"
+    "last_updated": "2026-09-22 19:04:18"
   },
   "力量母礦": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:29"
+    "last_updated": "2026-09-22 19:04:34"
   },
   "敏捷母礦": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:31"
+    "last_updated": "2026-09-22 19:04:36"
   },
   "智慧母礦": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:35"
+    "last_updated": "2026-09-22 19:04:38"
   },
   "幸運母礦": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:48"
+    "last_updated": "2026-09-22 19:04:54"
   },
   "力量水晶": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:50"
+    "last_updated": "2026-09-22 19:04:55"
   },
   "敏捷水晶": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:04:54"
+    "last_updated": "2026-09-22 19:04:57"
   },
   "智慧水晶": {
     "tier": 2,
@@ -353,7 +457,7 @@
   },
   "幸運水晶": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:05:07"
+    "last_updated": "2026-09-22 19:05:12"
   },
   "腰帶力量卷軸10%": {
     "tier": 4,
@@ -421,7 +525,7 @@
   },
   "楓葉祝福 20": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:05:10"
+    "last_updated": "2026-09-22 19:05:14"
   },
   "挑釁 30": {
     "tier": 2,
@@ -429,10 +533,10 @@
   },
   "超級藥水": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:05:14"
+    "last_updated": "2026-09-22 19:05:16"
   },
   "特殊藥水": {
     "tier": 1,
-    "last_updated": "2026-09-22 18:05:26"
+    "last_updated": "2026-09-22 19:05:31"
   }
 }

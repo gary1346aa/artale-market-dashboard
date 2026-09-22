@@ -256,6 +256,9 @@ Write-Log 'Schedule: Initial Run Immediately -> Hourly (:00)'
 Write-Log 'Mode: 100% Silent Background (Both + Due, No Prompts)'
 Write-Log '=========================================='
 
+# Set system to Balanced power scheme during daemon idle
+try { powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e } catch {}
+
 # Run immediately once upon startup, then follow standard hourly schedule
 $nextPrompt = (Get-Date).AddSeconds(-1)
 Write-Log "Initial scan starting immediately. Subsequent runs will align to hourly (:00) schedule."
@@ -283,30 +286,30 @@ while ($true) {
             $dueList = @($dueInfo.due_items)
 
             if ($dueCount -eq 0) {
-                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date. Skipping collection."
+                Write-Log "Watchlist Check: 0 of $totalCount items due to update. All items up to date. Zero-power idle maintained (emulators remain closed)."
             } else {
                 $sample = if ($dueList.Count -gt 6) { ($dueList[0..5] -join ', ') + " (+$(($dueList.Count - 6)) more)" } else { $dueList -join ', ' }
                 Write-Log "Watchlist Check: $dueCount of $totalCount item(s) due to update: [$sample]"
-                Write-Log "Starting silent background collection for $dueCount due item(s)..."
+                Write-Log "Starting collection for $dueCount due item(s) with AutoPowerSave (Visible + Clean Power-Down)..."
                 try {
-                    $proc = Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait -PassThru
-                    if ($proc.ExitCode -eq 0) {
-                        Write-Log "Silent collection ($dueCount items) and sync completed successfully!"
+                    & "$workDir\run_auto.ps1" -TargetTab both -Due -AutoPowerSave
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Log "Collection ($dueCount items) and sync completed successfully!"
                     } else {
-                        Write-Log "Silent collection failed with exit code $($proc.ExitCode). Check collector_run.log for details."
+                        Write-Log "Collection exited with code $LASTEXITCODE. Check collector_run.log for details."
                     }
                 } catch {
                     Write-Log "Error executing run_auto.ps1: $_"
                 }
             }
         } else {
-            Write-Log "Scheduled target reached ($($now.ToString('HH:mm'))). Starting silent background collection (Both tabs, due items)..."
+            Write-Log "Scheduled target reached ($($now.ToString('HH:mm'))). Starting collection (Both tabs, due items, AutoPowerSave)..."
             try {
-                $proc = Start-Process powershell.exe -ArgumentList "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File `"$workDir\run_auto.ps1`" -TargetTab both -Due" -Wait -PassThru
-                if ($proc.ExitCode -eq 0) {
-                    Write-Log "Silent collection and sync completed successfully!"
+                & "$workDir\run_auto.ps1" -TargetTab both -Due -AutoPowerSave
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Log "Collection and sync completed successfully!"
                 } else {
-                    Write-Log "Silent collection failed with exit code $($proc.ExitCode). Check collector_run.log for details."
+                    Write-Log "Collection exited with code $LASTEXITCODE. Check collector_run.log for details."
                 }
             } catch {
                 Write-Log "Error executing run_auto.ps1: $_"

@@ -8,7 +8,10 @@ param (
     [string]$Script = "",
     [int]$StartIndex = 1,
     [int]$Tier = 0,
-    [switch]$Due
+    [switch]$Due,
+    [switch]$AutoPowerSave,
+    [switch]$ColdBoot,
+    [switch]$Bootstrap
 )
 
 $ErrorActionPreference = "Continue"
@@ -100,45 +103,101 @@ if ($Due) {
 if ($Parallel -gt 0) {
     $extraArgs += @("--parallel", $Parallel)
 }
-
-if ($Query -ne "") {
-    & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
-} else {
-    & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+if ($ColdBoot -or $AutoPowerSave) {
+    $extraArgs += @("--cold-boot")
+}
+if ($Bootstrap -or $AutoPowerSave) {
+    $extraArgs += @("--bootstrap")
+}
+function Set-WindowsPowerPlan([string]$planName) {
+    try {
+        $targetGuid = $null
+        $plans = powercfg /list
+        foreach ($line in ($plans -split "`r?`n")) {
+            if ($line -match 'Power Scheme GUID:\s+([a-f0-9\-]+)\s+\((.+)\)') {
+                $guid = $matches[1].Trim()
+                $name = $matches[2].Trim()
+                if ($name -like "*$planName*") {
+                    $targetGuid = $guid
+                    break
+                }
+            }
+        }
+        if (-not $targetGuid) {
+            if ($planName -like "*Ultimate*") { $targetGuid = "ee8b14d0-ad4d-4345-8f52-928a761433ff" }
+            elseif ($planName -like "*Balanced*") { $targetGuid = "381b4222-f694-41f0-9685-ff5bb260df2e" }
+        }
+        if ($targetGuid) {
+            powercfg /setactive $targetGuid
+            $pMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Windows Power Scheme switched to: $planName ($targetGuid)"
+            Write-Host $pMsg -ForegroundColor Magenta
+            $pMsg | Out-File $logFile -Append -Encoding utf8
+        }
+    } catch {
+        Write-Warning "Failed to set power scheme: $_"
+    }
 }
 
-if ($LASTEXITCODE -ne 0) {
-    $failMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps."
-    Write-Host $failMsg -ForegroundColor Red
-    $failMsg | Out-File $logFile -Append -Encoding utf8
-    exit $LASTEXITCODE
+if ($AutoPowerSave) {
+    $extraArgs += @("--kill-after")
+    Set-WindowsPowerPlan "Ultimate Performance"
 }
 
-$aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."
-Write-Host $aggMsg -ForegroundColor Cyan
-$aggMsg | Out-File $logFile -Append -Encoding utf8
-& $python -u -m storage.aggregator | Tee-Object -FilePath $logFile -Append
+try {
+    if ($Query -ne "") {
+        & $python -u run_collector.py --mode auto --query $Query --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+    } else {
+        & $python -u run_collector.py --mode auto --watchlist $Watchlist --pages $Pages --target-tab $TargetTab @extraArgs 2>&1 | Tee-Object -FilePath $logFile -Append
+    }
 
-$dashMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Updating dashboard.html and docs/index.html..."
-Write-Host $dashMsg -ForegroundColor Cyan
-$dashMsg | Out-File $logFile -Append -Encoding utf8
-& $python -u dashboard.py | Tee-Object -FilePath $logFile -Append
+    if ($LASTEXITCODE -ne 0) {
+        $failMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps."
+        Write-Host $failMsg -ForegroundColor Red
+        $failMsg | Out-File $logFile -Append -Encoding utf8
+        exit $LASTEXITCODE
+    }
 
-# Automated GitHub Pages sync (if git remote origin is configured)
-$hasRemote = git remote 2>$null
-if ($hasRemote -contains "origin") {
-    $syncMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Syncing docs/index.html to GitHub Pages..."
-    Write-Host $syncMsg -ForegroundColor Green
-    $syncMsg | Out-File $logFile -Append -Encoding utf8
-    git add docs/index.html
-    git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))"
-    git push origin master
-} else {
-    $localMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] GitHub remote not configured; generated locally."
-    Write-Host $localMsg -ForegroundColor Yellow
-    $localMsg | Out-File $logFile -Append -Encoding utf8
+    $aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."
+    Write-Host $aggMsg -ForegroundColor Cyan
+    $aggMsg | Out-File $logFile -Append -Encoding utf8
+    & $python -u -m storage.aggregator | Tee-Object -FilePath $logFile -Append
+
+    $dashMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Updating dashboard.html and docs/index.html..."
+    Write-Host $dashMsg -ForegroundColor Cyan
+    $dashMsg | Out-File $logFile -Append -Encoding utf8
+    & $python -u dashboard.py | Tee-Object -FilePath $logFile -Append
+
+    # Automated GitHub Pages sync (if git remote origin is configured)
+    $hasRemote = git remote 2>$null
+    if ($hasRemote -contains "origin") {
+        $syncMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Syncing docs/index.html to GitHub Pages..."
+        Write-Host $syncMsg -ForegroundColor Green
+        $syncMsg | Out-File $logFile -Append -Encoding utf8
+        git add docs/index.html
+        git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))"
+        git push origin master
+    } else {
+        $localMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] GitHub remote not configured; generated locally."
+        Write-Host $localMsg -ForegroundColor Yellow
+        $localMsg | Out-File $logFile -Append -Encoding utf8
+    }
+
+    $finishMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] All tasks finished successfully!"
+    Write-Host $finishMsg -ForegroundColor Green
+    $finishMsg | Out-File $logFile -Append -Encoding utf8
+} finally {
+    if ($AutoPowerSave) {
+        # Failsafe: Ensure emulators are terminated even if a script crash occurred
+        try {
+            if ($Instance -ne "") {
+                $pyKill = "from driver.emulator_controller import EmulatorController; EmulatorController().quit_instance('$Instance')"
+            } else {
+                $pyKill = "from driver.emulator_controller import EmulatorController; EmulatorController().quit_all()"
+            }
+            & $python -c $pyKill 2>$null
+        } catch {}
+
+        # Revert Windows Power Scheme back to Balanced for idle power preservation
+        Set-WindowsPowerPlan "Balanced"
+    }
 }
-
-$finishMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] All tasks finished successfully!"
-Write-Host $finishMsg -ForegroundColor Green
-$finishMsg | Out-File $logFile -Append -Encoding utf8

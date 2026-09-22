@@ -62,14 +62,18 @@ class TestWatchlist(unittest.TestCase):
 
     def test_classify_tier_boundaries(self):
         """Verify velocity tier assignment based on trade velocity metrics."""
-        # Tier 1: safe_overflow_hrs <= 3.5 or peak_hr >= 28
-        self.assertEqual(WatchlistManager.classify_tier(peak_hr=30, daily_avg=50.0, safe_overflow_hrs=3.0), 1)
-        # Tier 2: safe_overflow_hrs <= 8.5 or peak_hr >= 12 or daily_avg >= 35.0
-        self.assertEqual(WatchlistManager.classify_tier(peak_hr=15, daily_avg=40.0, safe_overflow_hrs=7.0), 2)
-        # Tier 3: safe_overflow_hrs <= 24.0 or peak_hr >= 4 or daily_avg >= 10.0
-        self.assertEqual(WatchlistManager.classify_tier(peak_hr=5, daily_avg=15.0, safe_overflow_hrs=15.0), 3)
-        # Tier 4: all others
-        self.assertEqual(WatchlistManager.classify_tier(peak_hr=1, daily_avg=2.0, safe_overflow_hrs=50.0), 4)
+        # Tier 1: peak_hr >= 70 or safe_overflow_hrs <= 2.0
+        self.assertEqual(WatchlistManager.classify_tier(peak_hr=75, safe_overflow_hrs=1.8), 1)
+        # Tier 2: peak_hr >= 35 or safe_overflow_hrs <= 4.0
+        self.assertEqual(WatchlistManager.classify_tier(peak_hr=40, safe_overflow_hrs=3.5), 2)
+        # Tier 3: peak_hr >= 18 or safe_overflow_hrs <= 7.8
+        self.assertEqual(WatchlistManager.classify_tier(peak_hr=20, safe_overflow_hrs=7.0), 3)
+        # Tier 4: peak_hr >= 9 or safe_overflow_hrs <= 15.6
+        self.assertEqual(WatchlistManager.classify_tier(peak_hr=12, safe_overflow_hrs=11.6), 4)
+        # Tier 5: peak_hr >= 5 or safe_overflow_hrs <= 28.0
+        self.assertEqual(WatchlistManager.classify_tier(peak_hr=6, safe_overflow_hrs=23.3), 5)
+        # Tier 6: peak_hr < 5
+        self.assertEqual(WatchlistManager.classify_tier(peak_hr=2, safe_overflow_hrs=70.0), 6)
 
 
 if __name__ == "__main__":

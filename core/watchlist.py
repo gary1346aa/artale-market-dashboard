@@ -27,22 +27,32 @@ TIER_SPECS: Dict[int, Dict[str, Any]] = {
     },
     2: {
         "name": "High",
-        "poll_interval_hours": 4.0,
-        "desc": "高頻衝卷/廣播 (每 4 小時)",
+        "poll_interval_hours": 2.0,
+        "desc": "高頻武器卷/廣播 (每 2 小時)",
     },
     3: {
-        "name": "Moderate",
-        "poll_interval_hours": 12.0,
-        "desc": "主流飾品/武器卷 (每 12 小時)",
+        "name": "Active",
+        "poll_interval_hours": 4.0,
+        "desc": "活躍武器/飾品卷 (每 4 小時)",
     },
     4: {
-        "name": "Low / Sparse",
+        "name": "Moderate",
+        "poll_interval_hours": 8.0,
+        "desc": "主流卷軸 (每 8 小時)",
+    },
+    5: {
+        "name": "Low",
+        "poll_interval_hours": 16.0,
+        "desc": "低頻飾品卷 (每 16 小時)",
+    },
+    6: {
+        "name": "Cold / Sparse",
         "poll_interval_hours": 24.0,
         "desc": "冷門與長尾卷軸 (每 24 小時+)",
     },
 }
 
-BUFFER_CAPACITY: float = 100.0
+BUFFER_CAPACITY: float = 140.0
 
 
 class WatchlistManager:
@@ -100,25 +110,29 @@ class WatchlistManager:
 
     @staticmethod
     def classify_tier(
-        peak_hr: int, daily_avg: float, safe_overflow_hrs: float
+        peak_hr: int, daily_avg: float = 0.0, safe_overflow_hrs: float = 999.0
     ) -> int:
-        """Assigns priority tier 1 to 4 based on trade velocity.
+        """Assigns priority tier 1 to 6 based on trade velocity.
 
         Args:
             peak_hr: Maximum trades observed in any single hour.
             daily_avg: Average trades per active day.
-            safe_overflow_hrs: Hours before 100-record buffer rolls off.
+            safe_overflow_hrs: Hours before 140-record buffer rolls off.
 
         Returns:
-            Calculated tier integer (1, 2, 3, or 4).
+            Calculated tier integer (1, 2, 3, 4, 5, or 6).
         """
-        if safe_overflow_hrs <= 3.5 or peak_hr >= 28:
+        if peak_hr >= 70 or safe_overflow_hrs <= 2.0:
             return 1
-        if safe_overflow_hrs <= 8.5 or peak_hr >= 12 or daily_avg >= 35.0:
+        if peak_hr >= 35 or safe_overflow_hrs <= 4.0:
             return 2
-        if safe_overflow_hrs <= 24.0 or peak_hr >= 4 or daily_avg >= 10.0:
+        if peak_hr >= 18 or safe_overflow_hrs <= 7.8:
             return 3
-        return 4
+        if peak_hr >= 9 or safe_overflow_hrs <= 15.6:
+            return 4
+        if peak_hr >= 5 or safe_overflow_hrs <= 28.0:
+            return 5
+        return 6
 
     def evaluate_item_velocity(
         self,

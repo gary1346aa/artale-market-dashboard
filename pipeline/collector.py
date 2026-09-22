@@ -677,6 +677,7 @@ class MarketCollector:
             )
 
         failed_items: List[str] = []
+        w_total = len(str(len(keywords)))
         for idx, item in enumerate(keywords, 1):
             if idx < start_index:
                 continue
@@ -690,7 +691,7 @@ class MarketCollector:
                     break
 
             _logger.info(
-                f"[{self.current_instance}] -> Scanning [{idx}/{len(keywords)}]: '{item}'"
+                f"[{self.current_instance}] -> Scanning [{idx:>{w_total}}/{len(keywords)}]: '{item}'"
             )
             try:
                 ok = self.run_query_collection(

@@ -24,11 +24,25 @@ from pipeline.collector import (
     MarketCollector,
 )
 
+import unicodedata
+
 _logger = logging.getLogger(__name__)
 
 DEVICE_TO_INSTANCE: Dict[str, str] = {v: k for k, v in INSTANCE_TO_DEVICE.items()}
 DEFAULT_TRACKER_INSTANCES: List[str] = ["槍手", "打火機", "弩手"]
 DEFAULT_TRACKER_DEVICES: List[str] = ["emulator-5560", "emulator-5562", "emulator-5568"]
+
+
+def get_display_width(text: str) -> int:
+    """Calculates display width taking East Asian fullwidth/wide characters into account."""
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
+
+
+def pad_display_width(text: str, target_width: int) -> str:
+    """Pads text to target visual width using ASCII spaces."""
+    dw = get_display_width(text)
+    pad = max(0, target_width - dw)
+    return text + (" " * pad)
 
 
 class ParallelCollector:
@@ -136,31 +150,37 @@ class ParallelCollector:
         progress_lock = threading.Lock()
         completed_count = 0
         total_items = len(items)
+        w_total = len(str(len(keywords)))
+        w_batch = len(str(total_items))
+        max_inst_w = max(
+            [get_display_width(inst) for inst, _ in self.worker_targets] or [6]
+        )
 
         def worker_thread(inst_name: str, device_id: str) -> None:
             nonlocal completed_count
+            inst_tag = pad_display_width(inst_name, max_inst_w)
             _logger.info(
-                f"[{inst_name}] Starting asynchronous worker pipeline ({device_id})..."
+                f"[{inst_tag}] Starting asynchronous worker pipeline ({device_id})..."
             )
 
             # 1. Cold boot / Ensure instance is running
             if self.cold_boot or (
                 self.controller and not self.controller.is_running(inst_name)
             ):
-                _logger.info(f"[{inst_name}] Booting emulator instance...")
+                _logger.info(f"[{inst_tag}] Booting emulator instance...")
                 if self.controller:
                     self.controller.trigger_launch(inst_name)
                     # Stagger launch dispatches to avoid COM server lock collisions
                     time.sleep(2.5)
                     if not self.controller.wait_for_ready(inst_name, max_wait_sec=60):
                         _logger.error(
-                            f"[{inst_name}] Timed out waiting for boot. Worker aborting."
+                            f"[{inst_tag}] Timed out waiting for boot. Worker aborting."
                         )
                         return
 
             # 2. Bootstrap to Free Market
             if self.bootstrap:
-                _logger.info(f"[{inst_name}] Bootstrapping to Free Market...")
+                _logger.info(f"[{inst_tag}] Bootstrapping to Free Market...")
                 bootstrapper = GameBootstrapper(
                     adb=AdbDriver(device_id=device_id),
                     controller=self.controller,
@@ -170,14 +190,14 @@ class ParallelCollector:
                     clean_reboot=False, max_timeout_sec=160
                 ):
                     _logger.error(
-                        f"[{inst_name}] Failed to reach Free Market. Worker aborting."
+                        f"[{inst_tag}] Failed to reach Free Market. Worker aborting."
                     )
                     if self.kill_after and self.controller:
                         self.controller.quit_instance(inst_name)
                     return
 
             # 3. Enter Auction House & Check Quota
-            _logger.info(f"[{inst_name}] Reached Free Market. Entering Auction House...")
+            _logger.info(f"[{inst_tag}] Reached Free Market. Entering Auction House...")
             collector = MarketCollector(
                 instance_name=inst_name,
                 use_adb=True,
@@ -192,13 +212,13 @@ class ParallelCollector:
                     ready = True
                     break
                 _logger.warning(
-                    f"[{inst_name}] Auction House entry attempt {attempt}/3 failed. Retrying..."
+                    f"[{inst_tag}] Auction House entry attempt {attempt}/3 failed. Retrying..."
                 )
                 time.sleep(3.0)
 
             if not ready:
                 _logger.error(
-                    f"[{inst_name}] Could not enter Auction House. Worker aborting."
+                    f"[{inst_tag}] Could not enter Auction House. Worker aborting."
                 )
                 if self.kill_after and self.controller:
                     self.controller.quit_instance(inst_name)
@@ -207,7 +227,7 @@ class ParallelCollector:
             rem = collector.get_screen_quota()
             if rem is not None and rem < 2:
                 _logger.warning(
-                    f"[{inst_name}] Initial search quota exhausted ({rem} < 2). Retiring worker."
+                    f"[{inst_tag}] Initial search quota exhausted ({rem} < 2). Retiring worker."
                 )
                 collector.leave_auction()
                 collector.shutdown()
@@ -215,7 +235,7 @@ class ParallelCollector:
                     self.controller.quit_instance(inst_name)
                 return
 
-            _logger.info(f"[{inst_name}] Ready. Draining task queue dynamically...")
+            _logger.info(f"[{inst_tag}] Ready. Draining task queue dynamically...")
             try:
                 while not task_queue.empty():
                     try:
@@ -228,7 +248,7 @@ class ParallelCollector:
                         curr_progress = completed_count
 
                     _logger.info(
-                        f"[{inst_name}] -> Scanning [{idx}/{total_total}] (Batch: {curr_progress}/{total_items}): '{item}'"
+                        f"[{inst_tag}] -> Scanning [{idx:>{w_total}}/{total_total}] (Batch: {curr_progress:>{w_batch}}/{total_items}): '{item}'"
                     )
 
                     try:
@@ -239,7 +259,7 @@ class ParallelCollector:
                         )
                         if not ok:
                             _logger.warning(
-                                f"[{inst_name}] Quota exhausted on '{item}'. Re-queueing and retiring worker."
+                                f"[{inst_tag}] Quota exhausted on '{item}'. Re-queueing and retiring worker."
                             )
                             task_queue.put((idx, total_total, item))
                             collector.leave_auction()
@@ -249,7 +269,7 @@ class ParallelCollector:
                             return
                     except Exception as err:
                         _logger.error(
-                            f"[{inst_name}] Error processing '{item}': {err}"
+                            f"[{inst_tag}] Error processing '{item}': {err}"
                         )
                         with failed_lock:
                             failed_items.append(item)
@@ -257,10 +277,10 @@ class ParallelCollector:
                         task_queue.task_done()
                     time.sleep(1.2)
             finally:
-                _logger.info(f"[{inst_name}] Exiting Auction House...")
+                _logger.info(f"[{inst_tag}] Exiting Auction House...")
                 collector.shutdown()
                 if self.kill_after and self.controller:
-                    _logger.info(f"[{inst_name}] Terminating instance...")
+                    _logger.info(f"[{inst_tag}] Terminating instance...")
                     self.controller.quit_instance(inst_name)
 
         # Launch workers concurrently

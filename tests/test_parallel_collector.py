@@ -103,6 +103,24 @@ class TestParallelCollector(unittest.TestCase):
         mock_market_collector.leave_auction.assert_called_once()
         mock_ctrl.quit_instance.assert_called_with("槍手")
 
+    def test_display_width_alignment(self):
+        """Verify CJK instance names are padded to equal visual display width."""
+        from pipeline.parallel_collector import get_display_width, pad_display_width
+
+        # 2 CJK characters = 4 display columns, 3 CJK characters = 6 display columns
+        self.assertEqual(get_display_width("槍手"), 4)
+        self.assertEqual(get_display_width("打火機"), 6)
+
+        target_w = 6
+        padded_2 = pad_display_width("槍手", target_w)
+        padded_3 = pad_display_width("打火機", target_w)
+
+        # Both padded strings must have identical visual display width of 6
+        self.assertEqual(get_display_width(padded_2), target_w)
+        self.assertEqual(get_display_width(padded_3), target_w)
+        self.assertEqual(len(padded_2), 4)  # 2 characters + 2 spaces
+        self.assertEqual(len(padded_3), 3)  # 3 characters + 0 spaces
+
 
 if __name__ == "__main__":
     unittest.main()

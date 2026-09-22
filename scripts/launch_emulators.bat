@@ -14,7 +14,6 @@ if "%TARGET%"=="quit_all" goto :quit_all
 if "%TARGET:~0,5%"=="quit_" goto :quit_single
 
 :launch_single
-call :sanitize_com
 start "" "C:\LDPlayer\LDPlayer9\ldconsole.exe" launch --index %TARGET%
 goto :done
 

@@ -5,7 +5,7 @@ typography, Noto Sans TC Chinese rendering, dynamic Y-axis ticks, VWAP curves,
 and UI badges.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import math
 import os
@@ -72,6 +72,87 @@ def get_kline_data(item_name: str, timeframe: str = "1h", limit: int = 36, db_pa
         })
 
     return candles[-limit:], lowest_ask
+
+
+def get_24h_summary(item_name: str, db_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Calculates 24-hour market summary metrics from 1-hour candles.
+
+    Evaluates across the 24 hourly buckets ending at the market's latest
+    available candle timestamp.
+
+    Args:
+        item_name: Canonical item name.
+        db_path: Optional custom path to SQLite database.
+
+    Returns:
+        Dict with keys: 'vol_24', 'turnover_24', 'high_24', 'low_24',
+        'chg_24', 'vwap_24', 'latest_price'.
+    """
+    active_db = db_path or DB_PATH
+    with sqlite3.connect(active_db) as conn:
+        c = conn.cursor()
+        c.execute("SELECT max(bucket_time) FROM kline_candles WHERE timeframe = '1h'")
+        row = c.fetchone()
+        if not row or not row[0]:
+            return {
+                "vol_24": 0,
+                "turnover_24": 0,
+                "high_24": 0,
+                "low_24": 0,
+                "chg_24": 0.0,
+                "vwap_24": 0,
+                "latest_price": 0,
+            }
+
+        max_dt = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+        cutoff_str = (max_dt - timedelta(hours=23)).strftime("%Y-%m-%d %H:%M:%S")
+
+        c.execute("""
+            SELECT bucket_time, open_price, high_price, low_price, close_price, volume, turnover
+            FROM kline_candles
+            WHERE item_name = ? AND timeframe = '1h' AND bucket_time >= ?
+            ORDER BY bucket_time ASC
+        """, (item_name, cutoff_str))
+        rows = c.fetchall()
+
+        c.execute("""
+            SELECT close_price, vwap FROM kline_candles
+            WHERE item_name = ? AND timeframe = '1h'
+            ORDER BY bucket_time DESC LIMIT 1
+        """, (item_name,))
+        latest_row = c.fetchone()
+        latest_price = latest_row[0] if latest_row else 0
+        latest_vwap = latest_row[1] if (latest_row and latest_row[1]) else latest_price
+
+        if not rows:
+            return {
+                "vol_24": 0,
+                "turnover_24": 0,
+                "high_24": latest_price,
+                "low_24": latest_price,
+                "chg_24": 0.0,
+                "vwap_24": latest_vwap,
+                "latest_price": latest_price,
+            }
+
+        vol_24 = sum(r[5] for r in rows)
+        turnover_24 = sum(r[6] for r in rows)
+        high_24 = max(r[2] for r in rows)
+        low_24 = min(r[3] for r in rows)
+        open_24 = rows[0][1]
+        close_latest = rows[-1][4]
+        chg_24 = ((close_latest - open_24) / open_24 * 100) if open_24 else 0.0
+        vwap_24 = int(round(turnover_24 / vol_24)) if vol_24 > 0 else close_latest
+
+        return {
+            "vol_24": vol_24,
+            "turnover_24": turnover_24,
+            "high_24": high_24,
+            "low_24": low_24,
+            "chg_24": chg_24,
+            "vwap_24": vwap_24,
+            "latest_price": close_latest,
+        }
 
 
 def draw_smooth_bubble(
@@ -252,9 +333,9 @@ def generate_kline_plot(
         tab_x -= round(12 * sx)
 
     # Row 2: Hero Price + Change Pill + Lowest Ask Pill
-    latest_close = candles[-1]["close"]
-    first_open = candles[0]["open"]
-    chg_pct = ((latest_close - first_open) / first_open * 100) if first_open else 0.0
+    sum24 = get_24h_summary(item_name, db_path=db_path)
+    latest_close = sum24["latest_price"] or candles[-1]["close"]
+    chg_pct = sum24["chg_24"]
     c_chg = C_UP if chg_pct >= 0 else C_DOWN
     chg_sign = "+" if chg_pct >= 0 else ""
 
@@ -275,7 +356,7 @@ def generate_kline_plot(
         text_color=c_chg
     )
 
-    # Lowest Ask Pill (Right-aligned, silky smooth)
+    # Lowest Ask Pill (Right-aligned)
     if lowest_ask:
         ask_val_str = f"{lowest_ask:,}"
         ask_full = f"即時最低賣價  {ask_val_str}"
@@ -290,18 +371,13 @@ def generate_kline_plot(
         )
 
     # Row 3: 5-Column Financial Metrics Ribbon
-    high_all = max(c["high"] for c in candles)
-    low_all = min(c["low"] for c in candles)
-    vol_all = sum(c["volume"] for c in candles)
-    turnover_all = sum(c["turnover"] for c in candles)
-    vwap_latest = candles[-1]["vwap"] or latest_close
-
+    vwap_val = sum24["vwap_24"] or latest_close
     metrics = [
-        ("24小時最高", f"{high_all:,}"),
-        ("24小時最低", f"{low_all:,}"),
-        ("24小時成交量", format_vol_cjk(vol_all)),
-        ("24小時成交額", format_price_cjk(turnover_all)),
-        ("加權均價 (VWAP)", f"{vwap_latest:,}"),
+        ("24小時最高", f"{sum24['high_24']:,}" if sum24["high_24"] else "--"),
+        ("24小時最低", f"{sum24['low_24']:,}" if sum24["low_24"] else "--"),
+        ("24小時成交量", format_vol_cjk(sum24["vol_24"])),
+        ("24小時成交額", format_price_cjk(sum24["turnover_24"])),
+        ("加權均價 (VWAP)", f"{vwap_val:,}" if vwap_val else "--"),
     ]
 
     col_spacing = (width - margin_x * 2) // len(metrics)

@@ -5,7 +5,7 @@ from the database, and renders the Binance-style interactive web dashboard.
 """
 
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 from pathlib import Path
@@ -58,6 +58,18 @@ def export_dashboard_data(
         else:
             cursor.execute("SELECT DISTINCT item_name FROM kline_candles")
             items = sorted([r[0] for r in cursor.fetchall()])
+
+        cursor.execute("SELECT max(bucket_time) FROM kline_candles WHERE timeframe = '1h'")
+        max_market_row = cursor.fetchone()
+        if max_market_row and max_market_row[0]:
+            try:
+                market_now_dt = datetime.strptime(max_market_row[0], "%Y-%m-%d %H:%M:%S")
+                market_cutoff_dt = market_now_dt - timedelta(hours=23)
+                global_cutoff_t = int(calendar.timegm(market_cutoff_dt.timetuple()))
+            except Exception:
+                global_cutoff_t = 0
+        else:
+            global_cutoff_t = 0
 
         data_by_item: Dict[str, Any] = {}
         summary_list: List[Dict[str, Any]] = []
@@ -118,21 +130,32 @@ def export_dashboard_data(
             if candles_1h:
                 latest = candles_1h[-1]
                 latest_price = latest["close"]
-                latest_t = latest["time"]
-                cutoff_t = latest_t - (24 * 3600)
-                c24 = [c for c in candles_1h if c["time"] >= cutoff_t]
+                c24 = [
+                    c
+                    for c in candles_1h
+                    if isinstance(c["time"], (int, float))
+                    and c["time"] >= global_cutoff_t
+                ] if global_cutoff_t else candles_1h
 
-                vol_24 = sum(c["volume"] for c in c24)
-                turnover_24 = sum(c["turnover"] for c in c24)
-                trades_24 = sum(c["trades"] for c in c24)
-                high_24 = max(c["high"] for c in c24)
-                low_24 = min(c["low"] for c in c24)
-                open_24 = c24[0]["open"]
-                chg_24 = (
-                    ((latest_price - open_24) / open_24 * 100)
-                    if open_24
-                    else 0.0
-                )
+                if c24:
+                    vol_24 = sum(c["volume"] for c in c24)
+                    turnover_24 = sum(c["turnover"] for c in c24)
+                    trades_24 = sum(c["trades"] for c in c24)
+                    high_24 = max(c["high"] for c in c24)
+                    low_24 = min(c["low"] for c in c24)
+                    open_24 = c24[0]["open"]
+                    chg_24 = (
+                        ((latest_price - open_24) / open_24 * 100)
+                        if open_24
+                        else 0.0
+                    )
+                else:
+                    vol_24 = 0
+                    turnover_24 = 0
+                    trades_24 = 0
+                    high_24 = latest_price
+                    low_24 = latest_price
+                    chg_24 = 0.0
             else:
                 latest_price = 0
                 vol_24 = 0

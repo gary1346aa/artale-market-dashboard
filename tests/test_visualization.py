@@ -40,5 +40,75 @@ class TestVisualization(unittest.TestCase):
         self.assertGreaterEqual(n_max, 3000000)
 
 
+class TestKlinePlotter24hSummary(unittest.TestCase):
+    """Tests for 24h rolling summary metrics in kline_plotter."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from storage.database import init_db
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self.temp_dir.name) / "test_kline.db"
+        init_db(db_path=self.db_path)
+
+    def tearDown(self):
+        try:
+            self.temp_dir.cleanup()
+        except Exception:
+            pass
+
+    def test_get_24h_summary_calculation(self):
+        """Verify 24h metrics only aggregate the rolling 24-hour window."""
+        import sqlite3
+        from visualization.kline_plotter import get_24h_summary
+
+        with sqlite3.connect(self.db_path) as conn:
+            c = conn.cursor()
+            candles = [
+                # item, tf, bucket_time, open, high, low, close, vol, turnover, vwap, trades
+                # Global latest is 2026-09-22 12:00:00
+                ("ItemA", "1h", "2026-09-20 10:00:00", 100, 110, 95, 105, 50, 5250, 105.0, 5),  # > 24h ago
+                ("ItemA", "1h", "2026-09-21 13:00:00", 100, 115, 98, 110, 20, 2200, 110.0, 2),  # 23h ago (open is 100)
+                ("ItemA", "1h", "2026-09-22 12:00:00", 110, 125, 108, 120, 30, 3600, 120.0, 3), # 0h ago (close is 120)
+                # Item B: stale item
+                ("ItemB", "1h", "2026-09-18 08:00:00", 500, 520, 490, 510, 100, 51000, 510.0, 10),
+            ]
+            c.executemany(
+                """
+                INSERT INTO kline_candles (
+                    item_name, timeframe, bucket_time, open_price, high_price,
+                    low_price, close_price, volume, turnover, vwap, trade_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                candles,
+            )
+
+        summary_a = get_24h_summary("ItemA", db_path=self.db_path)
+        self.assertEqual(summary_a["vol_24"], 50)
+        self.assertEqual(summary_a["turnover_24"], 5800)
+        self.assertEqual(summary_a["high_24"], 125)
+        self.assertEqual(summary_a["low_24"], 98)
+        self.assertEqual(summary_a["latest_price"], 120)
+        # chg_24: (120 - 100) / 100 * 100 = 20.0%
+        self.assertAlmostEqual(summary_a["chg_24"], 20.0)
+        # vwap_24: 5800 / 50 = 116.0
+        self.assertAlmostEqual(summary_a["vwap_24"], 116.0)
+
+        # Stale item
+        summary_b = get_24h_summary("ItemB", db_path=self.db_path)
+        self.assertEqual(summary_b["vol_24"], 0)
+        self.assertEqual(summary_b["turnover_24"], 0)
+        self.assertEqual(summary_b["high_24"], 510)
+        self.assertEqual(summary_b["low_24"], 510)
+        self.assertEqual(summary_b["latest_price"], 510)
+        self.assertEqual(summary_b["chg_24"], 0.0)
+
+        # Non-existent item
+        summary_c = get_24h_summary("NonExistent", db_path=self.db_path)
+        self.assertEqual(summary_c["vol_24"], 0)
+        self.assertEqual(summary_c["turnover_24"], 0)
+        self.assertEqual(summary_c["latest_price"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

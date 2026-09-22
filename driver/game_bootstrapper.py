@@ -439,9 +439,6 @@ class GameBootstrapper:
                             return False
                 else:
                     consecutive_screencap_fails = 0
-                    _logger.warning(
-                        f"[{dev}] Unknown screen state (count={consecutive_unknowns}/{MAX_CONSECUTIVE_UNKNOWNS}). Retrying capture..."
-                    )
                     if consecutive_unknowns >= MAX_CONSECUTIVE_UNKNOWNS:
                         _logger.error(
                             f"[{dev}] Freeze detected. In unknown state for {consecutive_unknowns} consecutive cycles. Respawning instance '{self.instance_name}'..."

@@ -171,6 +171,29 @@ class TestGameBootstrapper(unittest.TestCase):
         mock_sleep.assert_any_call(8.0)
         mock_adb.reconnect.assert_called_once()
 
+    @patch("time.sleep")
+    def test_unknown_screen_state_no_unnecessary_logs(self, mock_sleep):
+        """Verifies Unknown screen state is not logged during retries."""
+        from driver.game_bootstrapper import ScreenState
+
+        mock_adb = MagicMock()
+        mock_adb.is_free_market.return_value = False
+        frame = Image.new("RGB", (720, 1280))
+        mock_adb.screencap.return_value = frame
+
+        mock_ctrl = MagicMock()
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="槍手")
+
+        with patch("driver.game_bootstrapper.detect_screen_state", return_value=ScreenState.UNKNOWN), \
+             patch("driver.game_bootstrapper._logger") as mock_logger, \
+             patch.object(bootstrapper, "restart_instance_clean", return_value=False):
+            res = bootstrapper.bootstrap_to_free_market(max_timeout_sec=0)
+            self.assertFalse(res)
+
+        # Unknown screen state log should not be called
+        all_logs = [str(call) for call in mock_logger.mock_calls if "Unknown screen state" in str(call)]
+        self.assertEqual(all_logs, [])
+
 
 if __name__ == "__main__":
     unittest.main()

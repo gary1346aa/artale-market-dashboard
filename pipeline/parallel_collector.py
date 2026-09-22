@@ -51,9 +51,7 @@ class ParallelCollector:
             self.devices = ["legacy"]
 
         _logger.info(
-            "ParallelCollector initialized with %d worker(s): %s",
-            len(self.devices),
-            self.devices,
+            f"ParallelCollector initialized with {len(self.devices)} worker(s): {self.devices}"
         )
 
     def run_catalog_scan(
@@ -89,10 +87,8 @@ class ParallelCollector:
         def worker_thread(device_id: str) -> None:
             nonlocal completed_count
             inst_name = DEVICE_TO_INSTANCE.get(device_id, device_id)
-            _logger.info(
-                "[%s] Worker booting for instance '%s'...",
-                device_id,
-                inst_name,
+            _logger.debug(
+                f"[{device_id}] Worker booting for instance '{inst_name}'..."
             )
 
             collector = MarketCollector(
@@ -109,16 +105,13 @@ class ParallelCollector:
                     ready = True
                     break
                 _logger.warning(
-                    "[%s] Auction House entry attempt %d/3 failed. Retrying...",
-                    device_id,
-                    attempt,
+                    f"[{device_id}] Auction House entry attempt {attempt}/3 failed. Retrying..."
                 )
                 time.sleep(3.0)
 
             if not ready:
                 _logger.error(
-                    "[%s] Could not enter Auction House. Worker aborting.",
-                    device_id,
+                    f"[{device_id}] Could not enter Auction House. Worker aborting."
                 )
                 return
 
@@ -126,17 +119,14 @@ class ParallelCollector:
             rem = collector.get_screen_quota()
             if rem is not None and rem < 2:
                 _logger.warning(
-                    "[%s] Instance '%s' initial quota exhausted (%d < 2). Retiring worker from pool.",
-                    device_id,
-                    inst_name,
-                    rem,
+                    f"[{device_id}] Instance '{inst_name}' initial quota exhausted ({rem} < 2). Retiring worker from pool."
                 )
                 collector.leave_auction()
                 collector.shutdown()
                 return
 
-            _logger.info(
-                "[%s] Ready. Draining task queue dynamically...", device_id
+            _logger.debug(
+                f"[{device_id}] Ready. Draining task queue dynamically..."
             )
             try:
                 while not task_queue.empty():
@@ -150,13 +140,7 @@ class ParallelCollector:
                         curr_progress = completed_count
 
                     _logger.info(
-                        "[%s] -> Scanning [%d/%d] (Batch: %d/%d): '%s'",
-                        device_id,
-                        idx,
-                        total_total,
-                        curr_progress,
-                        total_items,
-                        item,
+                        f"[{device_id}] -> Scanning [{idx}/{total_total}] (Batch: {curr_progress}/{total_items}): '{item}'"
                     )
 
                     try:
@@ -168,10 +152,7 @@ class ParallelCollector:
                         if not ok:
                             # Live screen quota exhausted on this worker
                             _logger.warning(
-                                "[%s] Quota exhausted on instance '%s'. Re-queueing '%s' and retiring worker.",
-                                device_id,
-                                inst_name,
-                                item,
+                                f"[{device_id}] Quota exhausted on instance '{inst_name}'. Re-queueing '{item}' and retiring worker."
                             )
                             collector.leave_auction()
                             collector.shutdown()
@@ -179,10 +160,7 @@ class ParallelCollector:
                             return
                     except Exception as err:
                         _logger.error(
-                            "[%s] Error processing '%s': %s",
-                            device_id,
-                            item,
-                            err,
+                            f"[{device_id}] Error processing '{item}': {err}"
                         )
                         with failed_lock:
                             failed_items.append(item)
@@ -190,9 +168,8 @@ class ParallelCollector:
                         task_queue.task_done()
                     time.sleep(1.2)
             finally:
-                _logger.info(
-                    "[%s] Task queue drained. Safely exiting Auction House...",
-                    device_id,
+                _logger.debug(
+                    f"[{device_id}] Task queue drained. Safely exiting Auction House..."
                 )
                 collector.shutdown()
 

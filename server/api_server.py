@@ -95,7 +95,7 @@ async def handle_kline_image(request: web.Request) -> web.Response:
     except ValueError as err:
         return web.json_response({"error": str(err)}, status=404)
     except Exception as err:
-        _logger.error("API rendering error for '%s': %s", item_name, err)
+        _logger.error(f"API rendering error for '{item_name}': {err}")
         return web.json_response(
             {"error": f"Failed to render chart: {str(err)}"}, status=500
         )
@@ -107,7 +107,7 @@ async def handle_dashboard_data(request: web.Request) -> web.Response:
         data = await asyncio.to_thread(export_dashboard_data)
         return web.json_response(data)
     except Exception as err:
-        _logger.error("Failed to export dashboard data: %s", err)
+        _logger.error(f"Failed to export dashboard data: {err}")
         return web.json_response({"error": str(err)}, status=500)
 
 
@@ -134,5 +134,5 @@ def start_server(host: str = "0.0.0.0", port: int = 8080) -> None:
         port: TCP port to listen on.
     """
     app = create_app()
-    _logger.info("Starting Artale K-Line API Server on http://%s:%d", host, port)
+    _logger.info(f"Starting Artale K-Line API Server on http://{host}:{port}")
     web.run_app(app, host=host, port=port)

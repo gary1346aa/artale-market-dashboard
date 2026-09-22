@@ -106,7 +106,7 @@ def main() -> None:
 
     # 1. Single Item Query Mode
     if args.query:
-        _logger.info("Executing single item collection: '%s'", args.query)
+        _logger.info(f"Executing single item collection: '{args.query}'")
         collector = MarketCollector(
             instance_name=args.instance,
             use_adb=True,
@@ -130,9 +130,7 @@ def main() -> None:
                 due_items, wait_sec, next_item = wm.get_due_items()
                 if due_items:
                     _logger.info(
-                        "Found %d items currently due: %s",
-                        len(due_items),
-                        due_items[:5],
+                        f"Found {len(due_items)} items currently due: {due_items[:5]}"
                     )
                     if args.parallel:
                         pc = ParallelCollector(max_workers=args.max_workers)
@@ -158,19 +156,15 @@ def main() -> None:
                             collector.shutdown()
                 else:
                     _logger.info(
-                        "No items due. Next due: '%s' in %.1f minutes. Sleeping...",
-                        next_item,
-                        wait_sec / 60.0,
+                        f"No items due. Next due: '{next_item}' in {wait_sec / 60.0:.1f} minutes. Sleeping..."
                     )
                     time.sleep(min(wait_sec, 60.0))
         else:
             due_items, wait_sec, next_item = wm.get_due_items()
-            _logger.info("Found %d items currently due.", len(due_items))
+            _logger.info(f"Found {len(due_items)} items currently due.")
             if not due_items:
                 _logger.info(
-                    "Next due item: '%s' in %.1f minutes.",
-                    next_item,
-                    wait_sec / 60.0,
+                    f"Next due item: '{next_item}' in {wait_sec / 60.0:.1f} minutes."
                 )
                 return
 
@@ -199,14 +193,14 @@ def main() -> None:
     # 3. Full Watchlist Mode
     if args.watchlist:
         if not WATCHLIST_PATH.exists():
-            _logger.error("Watchlist file not found: %s", WATCHLIST_PATH)
+            _logger.error(f"Watchlist file not found: {WATCHLIST_PATH}")
             sys.exit(1)
 
         with open(WATCHLIST_PATH, "r", encoding="utf-8") as f:
             raw = json.load(f)
             items = list(raw.keys()) if isinstance(raw, dict) else raw
 
-        _logger.info("Loaded %d items from watchlist.", len(items))
+        _logger.info(f"Loaded {len(items)} items from watchlist.")
         if args.parallel:
             pc = ParallelCollector(max_workers=args.max_workers)
             pc.run_catalog_scan(

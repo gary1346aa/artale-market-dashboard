@@ -34,7 +34,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
 
 @contextmanager
 def open_db(db_path: Optional[Path] = None):
-    """Context manager that guarantees transaction commit and connection close.
+    """Context manager for transaction commit and connection close.
 
     Args:
         db_path: Optional custom path to SQLite database.
@@ -165,7 +165,7 @@ def save_active_listings(
             )
             conn.commit()
         except Exception as err:
-            _logger.error("Failed to insert active_listings batch: %s", err)
+            _logger.error(f"Failed to insert active_listings batch: {err}")
             raise
 
 
@@ -209,10 +209,7 @@ def save_matched_trades(
                 )
             except Exception as err:
                 _logger.error(
-                    "Failed to insert matched_trade row %d (%s): %s",
-                    idx,
-                    t.item_name,
-                    err,
+                    f"Failed to insert matched_trade row {idx} ({t.item_name}): {err}"
                 )
                 raise
         conn.commit()

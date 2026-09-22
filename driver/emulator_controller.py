@@ -106,7 +106,7 @@ class EmulatorController:
 
     @staticmethod
     def _decode_output(raw_output: Union[bytes, str]) -> str:
-        """Robustly decodes raw CLI output across big5, cp950, utf-8, and system codepages.
+        """Decodes raw CLI output across big5, cp950, utf-8, and system codepages.
 
         Args:
             raw_output: Raw bytes or string from subprocess stdout/stderr.
@@ -159,9 +159,7 @@ class EmulatorController:
             return out_str == "running"
         except Exception as err:
             _logger.error(
-                "Error checking instance state for '%s': %s",
-                instance_name,
-                err,
+                f"Error checking instance state for '{instance_name}': {err}"
             )
             return False
 
@@ -205,8 +203,7 @@ class EmulatorController:
                 svc_count = int(svc_res.stdout.strip() or 0)
                 if svc_count > 0:
                     _logger.warning(
-                        "Detected %d orphaned Ld9BoxSVC.exe process(es). Sanitizing COM state...",
-                        svc_count,
+                        f"Detected {svc_count} orphaned Ld9BoxSVC.exe process(es). Sanitizing COM state..."
                     )
                     subprocess.run(
                         ["taskkill", "/f", "/im", "Ld9BoxSVC.exe"],
@@ -214,9 +211,9 @@ class EmulatorController:
                         check=False,
                     )
                     time.sleep(_COM_MUTEX_RELEASE_DELAY_SEC)
-                    _logger.info("COM state sanitized successfully.")
+                    _logger.debug("COM state sanitized.")
         except Exception as err:
-            _logger.debug("COM sanitization check error: %s", err)
+            _logger.debug(f"COM sanitization check error: {err}")
 
     @staticmethod
     def check_and_dismiss_error_dialogs() -> bool:
@@ -252,18 +249,14 @@ class EmulatorController:
                     full_text = " ".join(t[1] for t in child_controls)
                     if any(k in full_text for k in _ERROR_DIALOG_KEYWORDS) or "載入失敗" in title:
                         _logger.warning(
-                            "Detected modal error dialog '%s' [%s]: %s",
-                            title,
-                            cls,
-                            full_text,
+                            f"Detected modal error dialog '{title}' [{cls}]: {full_text}"
                         )
                         # Attempt clicking recovery button first
                         clicked = False
                         for chwnd, ctext in child_controls:
                             if any(label in ctext for label in _ERROR_DIALOG_RECOVERY_LABELS):
                                 _logger.info(
-                                    "Clicking recovery button '%s' on dialog...",
-                                    ctext,
+                                    f"Clicking recovery button '{ctext}' on dialog..."
                                 )
                                 win32gui.SendMessage(chwnd, win32con.BM_CLICK, 0, 0)
                                 clicked = True
@@ -278,7 +271,7 @@ class EmulatorController:
         try:
             win32gui.EnumWindows(enum_window_cb, None)
         except Exception as err:
-            _logger.debug("Error during dialog scan: %s", err)
+            _logger.debug(f"Error during dialog scan: {err}")
 
         return found
 
@@ -295,13 +288,13 @@ class EmulatorController:
             bool: True if successfully booted, False if timed out.
         """
         if self.is_running(instance_name):
-            _logger.info("Instance '%s' is already running.", instance_name)
+            _logger.info(f"Instance '{instance_name}' is already running.")
             return True
 
         # Pre-launch check: flush any orphaned COM server before spawning
         self.sanitize_com_service()
 
-        _logger.info("Booting LDPlayer instance '%s' via automated launcher...", instance_name)
+        _logger.info(f"Booting LDPlayer instance '{instance_name}'...")
         idx = resolve_instance_index(instance_name)
 
         # 1. Trigger via launch_target and launcher script
@@ -322,21 +315,20 @@ class EmulatorController:
                 check=False,
             )
         except Exception as err:
-            _logger.debug("Task scheduler trigger failed: %s", err)
+            _logger.debug(f"Task scheduler trigger failed: {err}")
 
         start_t = time.time()
         while time.time() - start_t < max_wait_sec:
             self.check_and_dismiss_error_dialogs()
             if self.is_running(instance_name):
                 _logger.info(
-                    "Instance '%s' running. Waiting 15s for OS to settle...",
-                    instance_name,
+                    f"Instance '{instance_name}' running. Waiting 15s for OS to settle..."
                 )
                 time.sleep(15)
                 return True
             time.sleep(2)
 
-        _logger.error("Timed out waiting for '%s' to boot.", instance_name)
+        _logger.error(f"Timed out waiting for '{instance_name}' to boot.")
         return False
 
     def quit_instance(self, instance_name: str) -> bool:
@@ -374,7 +366,7 @@ class EmulatorController:
             )
             return True
         except Exception as err:
-            _logger.error("Error quitting instance '%s': %s", instance_name, err)
+            _logger.error(f"Error quitting instance '{instance_name}': {err}")
             return False
 
     def force_kill_instance(self, instance_name: str) -> None:
@@ -398,7 +390,7 @@ class EmulatorController:
             )
             subprocess.run(["powershell", "-NoProfile", "-Command", cmd_vbox], capture_output=True, check=False)
         except Exception as err:
-            _logger.debug("Force kill error for instance %s: %s", instance_name, err)
+            _logger.debug(f"Force kill error for instance {instance_name}: {err}")
 
     def quit_all(self) -> bool:
         """Terminates all running LDPlayer instances.
@@ -435,7 +427,7 @@ class EmulatorController:
             time.sleep(_POST_TEARDOWN_COM_DELAY_SEC)
             return True
         except Exception as err:
-            _logger.error("Error running quitall: %s", err)
+            _logger.error(f"Error running quitall: {err}")
             return False
 
     def launch_all(
@@ -460,7 +452,7 @@ class EmulatorController:
         # Ensure COM server is not orphaned before launching all instances
         self.sanitize_com_service()
 
-        _logger.info("Booting all 3 emulator instances via automated launcher...")
+        _logger.info("Booting all 3 emulator instances...")
         try:
             target_file = Path("data/launch_target.txt")
             target_file.parent.mkdir(parents=True, exist_ok=True)
@@ -478,7 +470,7 @@ class EmulatorController:
                 check=False,
             )
         except Exception as err:
-            _logger.error("Error launching all instances: %s", err)
+            _logger.error(f"Error launching all instances: {err}")
 
         start_t = time.time()
         while time.time() - start_t < max_wait_sec:
@@ -522,7 +514,7 @@ class EmulatorController:
                     })
             return instances
         except Exception as err:
-            _logger.error("Error listing LDPlayer instances: %s", err)
+            _logger.error(f"Error listing LDPlayer instances: {err}")
             return []
 
 
@@ -544,7 +536,7 @@ def set_windows_power_plan(plan_name: str = "ultimate") -> bool:
         )
         return res.returncode == 0
     except Exception as err:
-        _logger.debug("Error switching power plan to %s: %s", plan_name, err)
+        _logger.debug(f"Error switching power plan to {plan_name}: {err}")
         return False
 
 

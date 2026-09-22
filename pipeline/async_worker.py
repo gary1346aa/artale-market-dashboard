@@ -27,7 +27,7 @@ DEBUG_ERRORS_DIR: Path = PROJECT_ROOT / "scratch" / "debug_errors"
 class AsyncOcrWorker:
     """Background worker that processes screenshot frames asynchronously.
 
-    Guarantees FIFO order and serialized SQLite database writes.
+    Maintains FIFO order and serialized SQLite database writes.
     """
 
     def __init__(self) -> None:
@@ -89,15 +89,12 @@ class AsyncOcrWorker:
                             and sig == self._last_sig
                         ):
                             _logger.debug(
-                                "[市價] Page %d duplicate signature detected. Skipping save.",
-                                page_num,
+                                f"[市價] Page {page_num} duplicate signature detected. Skipping save."
                             )
                         else:
                             save_matched_trades(records)
                             _logger.debug(
-                                "[市價] Async parsed & saved %d trades from page %d.",
-                                len(records),
-                                page_num,
+                                f"[市價] Async parsed and saved {len(records)} trades from page {page_num}."
                             )
                             if records:
                                 self._last_sig = sig
@@ -113,15 +110,12 @@ class AsyncOcrWorker:
                             and sig == self._last_sig
                         ):
                             _logger.debug(
-                                "[查詢] Page %d duplicate signature detected. Skipping save.",
-                                page_num,
+                                f"[查詢] Page {page_num} duplicate signature detected. Skipping save."
                             )
                         else:
                             save_active_listings(records)
                             _logger.debug(
-                                "[查詢] Async parsed & saved %d active listings from page %d.",
-                                len(records),
-                                page_num,
+                                f"[查詢] Async parsed and saved {len(records)} active listings from page {page_num}."
                             )
                             if records:
                                 self._last_sig = sig
@@ -140,19 +134,14 @@ class AsyncOcrWorker:
                     )
                     frame.save(err_path)
                     _logger.error(
-                        "[AsyncOcrWorker] Saved failed frame to: %s",
-                        err_path.resolve(),
+                        f"[AsyncOcrWorker] Saved failed frame to: {err_path.resolve()}"
                     )
                 except Exception as save_err:
                     _logger.error(
-                        "[AsyncOcrWorker] Could not save failed frame: %s",
-                        save_err,
+                        f"[AsyncOcrWorker] Could not save failed frame: {save_err}"
                     )
                 _logger.error(
-                    "Error in Async OCR worker on page %d for '%s': %s",
-                    page_num,
-                    item_name,
-                    err,
+                    f"[AsyncOcrWorker] Error on page {page_num} for '{item_name}': {err}"
                 )
             finally:
                 self._queue.task_done()

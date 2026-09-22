@@ -86,7 +86,7 @@ class MarketParser:
             filename = f"failed_row_{ts}_{safe_name}_r{row_idx}_{reason}.png"
             crop_image.save(FAILED_CROPS_DIR / filename)
         except Exception as err:
-            _logger.debug("Failed to save debug crop: %s", err)
+            _logger.debug(f"Failed to save debug crop: {err}")
 
     def detect_active_tab(self) -> str:
         """Detects whether '查詢' (query) or '市價' (market) tab is active.

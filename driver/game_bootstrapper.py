@@ -39,6 +39,10 @@ _logger = logging.getLogger(__name__)
 
 MSW_PACKAGE_NAME = "com.nexon.maplestoryworlds"
 
+# Progressive screencap backoff schedule: 2 + 4 + 6 + 8 = 20 seconds total grace period
+SCREENCAP_BACKOFF_SECONDS = (2.0, 4.0, 6.0, 8.0)
+MAX_CONSECUTIVE_UNKNOWNS = 20
+
 
 class ScreenState(Enum):
     """Discrete observable screen states during the Artale bootstrap workflow."""
@@ -97,7 +101,7 @@ def detect_screen_state(frame: Optional[Image.Image]) -> ScreenState:
                 if cv2.minMaxLoc(res)[1] >= 0.85:
                     return ScreenState.STATE_FREE_MARKET
 
-        # 2. Connecting / loading screen: majority pure pitch black (>40% pixels < 5)
+        # 2. Connecting / loading screen: dark background (>40% pixels < 5)
         if (arr < 5).mean() > 0.40:
             return ScreenState.STATE_GAME_CONNECTING
 
@@ -178,7 +182,7 @@ def find_artale_card_coordinates(frame: Image.Image) -> Optional[Tuple[int, int]
     try:
         res = winocr.recognize_pil_sync(frame, lang="zh-Hant-TW")
     except Exception as err:
-        _logger.error("OCR failed while detecting Artale card: %s", err)
+        _logger.error(f"OCR failed while detecting Artale card: {err}")
         return None
 
     candidates = []
@@ -206,13 +210,8 @@ def find_artale_card_coordinates(frame: Image.Image) -> Optional[Tuple[int, int]
     card_tap_x = int(rect["x"] + rect["width"] / 2)
     card_tap_y = int(rect["y"] - 120)
 
-    _logger.info(
-        "Detected Artale card token '%s' at (%.0f, %.0f). Target: (%d, %d)",
-        chosen[0],
-        rect["x"],
-        rect["y"],
-        card_tap_x,
-        card_tap_y,
+    _logger.debug(
+        f"Detected Artale card token '{chosen[0]}' at ({rect['x']:.0f}, {rect['y']:.0f}). Target: ({card_tap_x}, {card_tap_y})"
     )
     return card_tap_x, card_tap_y
 
@@ -246,23 +245,23 @@ class GameBootstrapper:
         """
         dev = self.adb.device_id
         if not self.instance_name:
-            _logger.info("[%s] No instance_name specified. Falling back to return_home_and_cleanup.", dev)
+            _logger.debug(f"[{dev}] No instance_name specified. Falling back to return_home_and_cleanup.")
             self.return_home_and_cleanup()
             return True
 
-        _logger.info("Killing LDPlayer instance '%s' (%s)...", self.instance_name, dev)
+        _logger.info(f"Killing LDPlayer instance '{self.instance_name}' ({dev})...")
         self.controller.quit_instance(self.instance_name)
         time.sleep(2.0)
         self.controller.force_kill_instance(self.instance_name)
         time.sleep(2.0)
 
-        _logger.info("Relaunching clean LDPlayer instance '%s'...", self.instance_name)
+        _logger.info(f"Relaunching clean LDPlayer instance '{self.instance_name}'...")
         if not self.controller.launch_instance(self.instance_name, max_wait_sec=60):
-            _logger.error("Failed to relaunch instance '%s'.", self.instance_name)
+            _logger.error(f"Failed to relaunch instance '{self.instance_name}'.")
             return False
 
         time.sleep(5.0)
-        _logger.info("[%s] Sending ESC / BACK events to dismiss home popups...", dev)
+        _logger.debug(f"[{dev}] Sending ESC / BACK events to dismiss home popups...")
         self.adb.send_esc(count=4, delay_sec=0.5)
         time.sleep(1.0)
         return True
@@ -270,12 +269,12 @@ class GameBootstrapper:
     def return_home_and_cleanup(self) -> None:
         """Closes running apps, returns to Android home screen, and dismisses popups."""
         dev = self.adb.device_id
-        _logger.info("[%s] Closing opening apps and returning to home...", dev)
+        _logger.debug(f"[{dev}] Closing opening apps and returning to home...")
         self.adb._run_adb("shell", "am", "force-stop", MSW_PACKAGE_NAME)
         time.sleep(0.5)
         self.adb.keyevent(3)  # KEYCODE_HOME
         time.sleep(1.0)
-        _logger.info("[%s] Sending ESC / BACK events to dismiss home popups...", dev)
+        _logger.debug(f"[{dev}] Sending ESC / BACK events to dismiss home popups...")
         self.adb.send_esc(count=4, delay_sec=0.4)
         time.sleep(0.8)
 
@@ -295,7 +294,7 @@ class GameBootstrapper:
             bool: True if successfully confirmed in Free Market, False if timed out.
         """
         dev = self.adb.device_id
-        _logger.info("[%s] Starting reactive closed-loop bootstrap to Free Market...", dev)
+        _logger.debug(f"[{dev}] Starting reactive closed-loop bootstrap to Free Market...")
 
         # 1. Clean reboot if requested
         if clean_reboot and self.instance_name:
@@ -303,12 +302,12 @@ class GameBootstrapper:
                 return False
         else:
             if self.instance_name and not self.controller.is_running(self.instance_name):
-                _logger.info("Instance '%s' not running. Booting...", self.instance_name)
+                _logger.info(f"Instance '{self.instance_name}' not running. Booting...")
                 if not self.controller.launch_instance(self.instance_name):
                     return False
 
         if self.adb.is_free_market():
-            _logger.info("[%s] Already confirmed in Free Market.", dev)
+            _logger.debug(f"[{dev}] Already confirmed in Free Market.")
             return True
 
         start_t = time.time()
@@ -318,14 +317,14 @@ class GameBootstrapper:
         while time.time() - start_t < max_timeout_sec:
             frame = self.adb.screencap()
             state = detect_screen_state(frame)
-            _logger.info("[%s] Observed screen state: %s", dev, state.value)
+            _logger.debug(f"[{dev}] Observed screen state: {state.value}")
 
             if state != ScreenState.UNKNOWN:
                 consecutive_unknowns = 0
                 consecutive_screencap_fails = 0
 
             if state == ScreenState.STATE_EXIT_MODAL:
-                _logger.info("[%s] Detected exit confirmation modal. Clicking [否] to dismiss...", dev)
+                _logger.debug(f"[{dev}] Detected exit confirmation modal. Clicking [否] to dismiss...")
                 self.adb.tap(POS_EXIT_MODAL_CANCEL.x, POS_EXIT_MODAL_CANCEL.y)
                 time.sleep(1.5)
 
@@ -334,30 +333,30 @@ class GameBootstrapper:
                 arr = np.array(frame.convert("RGB"))
                 fm_box = arr[410:485, 1100:1180]
                 if (fm_box > 220).all(axis=2).sum() > 150 and fm_box.mean() < 60:
-                    _logger.info("[%s] Closing open menu drawer in Free Market by tapping outside...", dev)
+                    _logger.debug(f"[{dev}] Closing open menu drawer in Free Market by tapping outside...")
                     self.adb.tap(POS_DISMISS_DRAWER.x, POS_DISMISS_DRAWER.y)
                     time.sleep(1.0)
-                _logger.info("[%s] Successfully reached Free Market!", dev)
+                _logger.info(f"[{dev}] Reached Free Market.")
                 return True
 
             elif state == ScreenState.STATE_HOME:
-                _logger.info("[%s] Clearing home popups with ESC and launching MSW...", dev)
+                _logger.debug(f"[{dev}] Clearing home popups with ESC and launching MSW...")
                 self.adb.send_esc(count=2, delay_sec=0.3)
                 time.sleep(0.5)
                 self.adb.tap(POS_HOME_MSW_ICON.x, POS_HOME_MSW_ICON.y)
                 time.sleep(3.0)
 
             elif state == ScreenState.STATE_MSW_LOADING:
-                _logger.info("[%s] MapleStory Worlds loading splash. Waiting...", dev)
+                _logger.debug(f"[{dev}] MapleStory Worlds loading splash. Waiting...")
                 time.sleep(3.0)
 
             elif state == ScreenState.STATE_MSW_LOBBY:
-                _logger.info("[%s] In MSW lobby. Clicking search icon...", dev)
+                _logger.debug(f"[{dev}] In MSW lobby. Clicking search icon...")
                 self.adb.tap(POS_MSW_SEARCH_BUTTON.x, POS_MSW_SEARCH_BUTTON.y)
                 time.sleep(2.5)
 
             elif state == ScreenState.STATE_MSW_SEARCH:
-                _logger.info("[%s] In search view. Focusing input and searching 'Artale'...", dev)
+                _logger.debug(f"[{dev}] In search view. Focusing input and searching 'Artale'...")
                 self.adb.tap(POS_MSW_SEARCH_INPUT.x, POS_MSW_SEARCH_INPUT.y)
                 time.sleep(0.8)
                 self.adb._run_adb("shell", "input", "text", "Artale")
@@ -366,35 +365,32 @@ class GameBootstrapper:
                 time.sleep(3.0)
 
             elif state == ScreenState.STATE_SEARCH_RESULTS:
-                _logger.info("[%s] In search results. Dynamically identifying Artale card...", dev)
+                _logger.debug(f"[{dev}] In search results. Dynamically identifying Artale card...")
                 coords = find_artale_card_coordinates(frame)
                 if coords:
                     self.adb.tap(coords[0], coords[1])
                     time.sleep(3.5)
                 else:
-                    _logger.warning("[%s] Could not locate card via OCR. Retrying in 2s...", dev)
+                    _logger.warning(f"[{dev}] Could not locate card via OCR. Retrying in 2s...")
                     time.sleep(2.0)
 
             elif state == ScreenState.STATE_ARTALE_DETAILS:
-                _logger.info("[%s] On Artale details page. Clicking [▶ 遊玩]...", dev)
+                _logger.debug(f"[{dev}] On Artale details page. Clicking [▶ 遊玩]...")
                 self.adb.tap(POS_MSW_PLAY_BUTTON.x, POS_MSW_PLAY_BUTTON.y)
                 time.sleep(5.0)
 
             elif state == ScreenState.STATE_GAME_CONNECTING:
-                _logger.info("[%s] Artale connecting / loading assets. Waiting...", dev)
+                _logger.debug(f"[{dev}] Artale connecting / loading assets. Waiting...")
                 time.sleep(3.5)
 
             elif state == ScreenState.STATE_LOGIN_SCREEN:
-                _logger.info("[%s] On title login screen. Clicking [登入]...", dev)
+                _logger.debug(f"[{dev}] On title login screen. Clicking [登入]...")
                 self.adb.tap(POS_LOGIN_BUTTON.x, POS_LOGIN_BUTTON.y)
                 time.sleep(4.5)
 
             elif state == ScreenState.STATE_CHAR_SELECT:
-                _logger.info(
-                    "[%s] On character select screen. Clicking [選擇角色] at (%d, %d)...",
-                    dev,
-                    POS_SELECT_CHARACTER_BUTTON.x,
-                    POS_SELECT_CHARACTER_BUTTON.y,
+                _logger.debug(
+                    f"[{dev}] On character select screen. Clicking [選擇角色] at ({POS_SELECT_CHARACTER_BUTTON.x}, {POS_SELECT_CHARACTER_BUTTON.y})..."
                 )
                 self.adb.touch(
                     POS_SELECT_CHARACTER_BUTTON.x,
@@ -404,12 +400,12 @@ class GameBootstrapper:
                 time.sleep(4.0)
 
             elif state == ScreenState.STATE_IN_GAME_WORLD:
-                _logger.info("[%s] In-game world HUD active. Clicking [::: MENU]...", dev)
+                _logger.debug(f"[{dev}] In-game world HUD active. Clicking [::: MENU]...")
                 self.adb.tap(POS_MENU_BUTTON.x, POS_MENU_BUTTON.y)
                 time.sleep(2.0)
 
             elif state == ScreenState.STATE_MOBILE_MENU:
-                _logger.info("[%s] Mobile menu drawer open. Clicking [自由市場]...", dev)
+                _logger.debug(f"[{dev}] Mobile menu drawer open. Clicking [自由市場]...")
                 self.adb.tap(
                     POS_FREE_MARKET_MENU_BUTTON.x, POS_FREE_MARKET_MENU_BUTTON.y
                 )
@@ -419,40 +415,52 @@ class GameBootstrapper:
                 consecutive_unknowns += 1
                 if frame is None:
                     consecutive_screencap_fails += 1
-                    time.sleep(1.5)
-                else:
-                    consecutive_screencap_fails = 0
-
-                _logger.warning(
-                    "[%s] Unrecognized screen state (count=%d, screencap_fails=%d). Retrying capture...",
-                    dev,
-                    consecutive_unknowns,
-                    consecutive_screencap_fails,
-                )
-
-                # Freeze Detection Watchdog: allow up to 10 screencap fails during cold OS initialization
-                if consecutive_screencap_fails >= 10 or consecutive_unknowns >= 15:
-                    _logger.error(
-                        "[%s] FREEZE / CRASH DETECTED! Screen capture or OS is unresponsive. Auto-killing and respawning instance '%s'...",
-                        dev,
-                        self.instance_name,
-                    )
-                    if self.restart_instance_clean():
-                        consecutive_unknowns = 0
-                        consecutive_screencap_fails = 0
-                        time.sleep(5.0)
+                    backoff_idx = consecutive_screencap_fails - 1
+                    if backoff_idx < len(SCREENCAP_BACKOFF_SECONDS):
+                        wait_sec = SCREENCAP_BACKOFF_SECONDS[backoff_idx]
+                        _logger.warning(
+                            f"[{dev}] Screen capture failed (attempt {consecutive_screencap_fails}/{len(SCREENCAP_BACKOFF_SECONDS)}). Backing off {int(wait_sec)}s..."
+                        )
+                        if consecutive_screencap_fails == 2:
+                            self.adb.reconnect()
+                        time.sleep(wait_sec)
                         continue
                     else:
-                        _logger.error("[%s] Emergency restart failed!", dev)
-                        return False
+                        _logger.error(
+                            f"[{dev}] Freeze confirmed after {int(sum(SCREENCAP_BACKOFF_SECONDS))}s backoff (screencap failed {consecutive_screencap_fails} times). Respawning instance '{self.instance_name}'..."
+                        )
+                        if self.restart_instance_clean():
+                            consecutive_unknowns = 0
+                            consecutive_screencap_fails = 0
+                            time.sleep(5.0)
+                            continue
+                        else:
+                            _logger.error(f"[{dev}] Emergency restart failed.")
+                            return False
+                else:
+                    consecutive_screencap_fails = 0
+                    _logger.warning(
+                        f"[{dev}] Unknown screen state (count={consecutive_unknowns}/{MAX_CONSECUTIVE_UNKNOWNS}). Retrying capture..."
+                    )
+                    if consecutive_unknowns >= MAX_CONSECUTIVE_UNKNOWNS:
+                        _logger.error(
+                            f"[{dev}] Freeze detected. In unknown state for {consecutive_unknowns} consecutive cycles. Respawning instance '{self.instance_name}'..."
+                        )
+                        if self.restart_instance_clean():
+                            consecutive_unknowns = 0
+                            consecutive_screencap_fails = 0
+                            time.sleep(5.0)
+                            continue
+                        else:
+                            _logger.error(f"[{dev}] Emergency restart failed.")
+                            return False
 
-                if consecutive_unknowns == 4:
-                    _logger.warning("[%s] Stuck in unknown state. Sending ESC to dismiss any popup...", dev)
-                    self.adb.send_esc(count=2, delay_sec=0.5)
-                time.sleep(2.0)
+                    if consecutive_unknowns == 4:
+                        _logger.warning(f"[{dev}] Stuck in unknown state. Sending ESC to dismiss popup...")
+                        self.adb.send_esc(count=2, delay_sec=0.5)
+                    time.sleep(2.0)
 
-
-        _logger.error("[%s] Timed out after %ds without reaching Free Market.", dev, max_timeout_sec)
+        _logger.error(f"[{dev}] Timed out after {max_timeout_sec}s without reaching Free Market.")
         return False
 
 

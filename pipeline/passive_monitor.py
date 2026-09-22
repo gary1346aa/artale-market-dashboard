@@ -53,27 +53,27 @@ class PassiveMarketMonitor:
 
         if tab == "market":
             save_matched_trades(records)
-            _logger.info("Saved %d matched trades into database.", len(records))
+            _logger.info(f"Saved {len(records)} matched trades into database.")
         else:
             save_active_listings(records)
-            _logger.info("Saved %d active listings into database.", len(records))
+            _logger.info(f"Saved {len(records)} active listings into database.")
 
         return len(records)
 
     def on_hotkey_manual(self) -> None:
         """Handles F9 manual snapshot."""
-        _logger.info("[F9] Manual capture triggered!")
+        _logger.info("[F9] Manual capture triggered.")
         self.capture_and_save()
 
     def on_hotkey_toggle(self) -> None:
         """Handles F10 monitoring toggle."""
         self.is_monitoring = not self.is_monitoring
-        state = "ACTIVATED" if self.is_monitoring else "DEACTIVATED"
-        _logger.info("[F10] Continuous watcher %s.", state)
+        state = "activated" if self.is_monitoring else "deactivated"
+        _logger.info(f"[F10] Continuous watcher {state}.")
 
     def start_listener(self) -> None:
         """Starts the blocking pynput global keyboard listener."""
-        _logger.info("Passive Market Monitor listening (F9: snapshot, F10: toggle)...")
+        _logger.info("Passive market monitor listening (F9: snapshot, F10: toggle)...")
 
         def for_canonical(f):
             return lambda k: f(l.canonical(k))

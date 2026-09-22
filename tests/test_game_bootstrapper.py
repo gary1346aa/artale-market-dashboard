@@ -122,6 +122,55 @@ class TestGameBootstrapper(unittest.TestCase):
         self.assertTrue(bootstrapper.bootstrap_to_free_market())
         mock_adb.tap.assert_not_called()
 
+    @patch("time.sleep")
+    def test_screencap_recovers_after_backoff_and_reconnect(self, mock_sleep):
+        """Simulates 2 consecutive screencap failures (2s, 4s backoff + reconnect), then recovery."""
+        mock_adb = MagicMock()
+        mock_adb.is_free_market.return_value = False
+        # Fails twice (None, None), then returns valid frame, then Free Market frame
+        fm_frame = Image.new("RGB", (720, 1280))
+        mock_adb.screencap.side_effect = [None, None, fm_frame]
+
+        mock_ctrl = MagicMock()
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="槍手")
+
+        with patch("driver.game_bootstrapper.detect_screen_state") as mock_detect:
+            from driver.game_bootstrapper import ScreenState
+            mock_detect.side_effect = [ScreenState.UNKNOWN, ScreenState.UNKNOWN, ScreenState.STATE_FREE_MARKET]
+            res = bootstrapper.bootstrap_to_free_market(max_timeout_sec=60)
+
+        self.assertTrue(res)
+        # Attempt 1 backoff: 2s, Attempt 2 backoff: 4s + reconnect
+        mock_sleep.assert_any_call(2.0)
+        mock_sleep.assert_any_call(4.0)
+        mock_adb.reconnect.assert_called_once()
+        mock_ctrl.quit_instance.assert_not_called()
+
+    @patch("time.sleep")
+    def test_screencap_freeze_confirmed_after_20s_backoff(self, mock_sleep):
+        """Confirms freeze triggers restart after exhausting 20s backoff (2+4+6+8s)."""
+        mock_adb = MagicMock()
+        mock_adb.is_free_market.return_value = False
+        # 5 consecutive failures
+        mock_adb.screencap.return_value = None
+
+        mock_ctrl = MagicMock()
+        mock_ctrl.launch_instance.return_value = True
+
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="槍手")
+
+        with patch.object(bootstrapper, "restart_instance_clean", return_value=False) as mock_restart:
+            res = bootstrapper.bootstrap_to_free_market(max_timeout_sec=60)
+            self.assertFalse(res)
+            mock_restart.assert_called_once()
+
+        # Verify backoff sleeps: 2s, 4s, 6s, 8s
+        mock_sleep.assert_any_call(2.0)
+        mock_sleep.assert_any_call(4.0)
+        mock_sleep.assert_any_call(6.0)
+        mock_sleep.assert_any_call(8.0)
+        mock_adb.reconnect.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

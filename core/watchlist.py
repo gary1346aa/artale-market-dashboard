@@ -235,9 +235,7 @@ class WatchlistManager:
                 json.dump(updated_watchlist, f, ensure_ascii=False, indent=2)
 
         _logger.info(
-            "Updated %s with %d items (Order preserved).",
-            self.watchlist_path.name,
-            len(updated_watchlist),
+            f"Updated {self.watchlist_path.name} with {len(updated_watchlist)} items (Order preserved)."
         )
         return {
             "total_items": len(updated_watchlist),
@@ -328,7 +326,7 @@ def update_item_timestamp(
                 with open(wl_file, "w", encoding="utf-8") as f:
                     json.dump(raw, f, ensure_ascii=False, indent=2)
         except Exception as err:
-            _logger.debug("Could not update timestamp for '%s': %s", item_name, err)
+            _logger.debug(f"Could not update timestamp for '{item_name}': {err}")
 
 
 def get_due_items(
@@ -368,5 +366,5 @@ def get_item_last_updated(
                 if isinstance(val, dict) and val.get("last_updated"):
                     return str(val["last_updated"])
         except Exception as err:
-            _logger.debug("Error reading last_updated for '%s': %s", item_name, err)
+            _logger.debug(f"Error reading last_updated for '{item_name}': {err}")
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")

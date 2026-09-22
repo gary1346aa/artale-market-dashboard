@@ -67,7 +67,7 @@ def discover_instances() -> Dict[str, str]:
                     port = 5554 + int(idx) * 2
                     mapping[name] = f"emulator-{port}"
     except Exception as err:
-        _logger.debug("Failed to query ldconsole for instances: %s", err)
+        _logger.debug(f"Failed to query ldconsole for instances: {err}")
     return mapping
 
 
@@ -91,7 +91,7 @@ def read_quota_from_frame(frame: Optional[Image.Image]) -> Optional[int]:
             remaining, _ = res
             return remaining
     except Exception as err:
-        _logger.debug("Error parsing quota header: %s", err)
+        _logger.debug(f"Error parsing quota header: {err}")
     return None
 
 
@@ -105,16 +105,13 @@ def pause_until_next_8am(instance_name: str = "") -> None:
     hours = wait_sec / 3600.0
     prefix = f"[{instance_name}] " if instance_name else ""
     _logger.info(
-        "%sQuota exhausted (< 2). Pausing instance until 08:00 AM reset (%.1f hours, %ds)...",
-        prefix,
-        hours,
-        int(wait_sec),
+        f"{prefix}Quota exhausted (< 2). Pausing instance until 08:00 AM reset ({hours:.1f} hours, {int(wait_sec)}s)..."
     )
     wake_time = time.time() + wait_sec
     while time.time() < wake_time:
         remaining = wake_time - time.time()
         time.sleep(min(30.0, remaining))
-    _logger.info("%s08:00 AM server reset reached! Resuming instance.", prefix)
+    _logger.info(f"{prefix}08:00 AM server reset reached. Resuming instance.")
 
 
 class MarketCollector:
@@ -164,10 +161,8 @@ class MarketCollector:
             elif not dev_id:
                 dev_id = attached[0] if attached else "emulator-5560"
             self.adb = AdbDriver(device_id=dev_id)
-            _logger.info(
-                "Initialized ADB background engine on device '%s' for '%s'.",
-                dev_id,
-                self.current_instance,
+            _logger.debug(
+                f"Initialized ADB background engine on device '{dev_id}' for '{self.current_instance}'."
             )
         else:
             self.adb = None
@@ -189,18 +184,18 @@ class MarketCollector:
         Returns:
             True on successful switch and focus.
         """
-        _logger.info("Switching active tracker to instance '%s'...", instance_name)
+        _logger.debug(f"Switching active tracker to instance '{instance_name}'...")
         self.current_instance = instance_name
 
         if self.use_adb and self.adb:
             dev_id = INSTANCE_TO_DEVICE.get(instance_name, "emulator-5558")
             self.adb = AdbDriver(device_id=dev_id)
-            _logger.info("Switched ADB device to '%s' (%s).", dev_id, instance_name)
+            _logger.debug(f"Switched ADB device to '{dev_id}' ({instance_name}).")
         else:
             self.win_mgr = WindowManager(title_keywords=[instance_name])
 
         self.ensure_focus()
-        _logger.info("Switched successfully to '%s'.", instance_name)
+        _logger.debug(f"Switched successfully to '{instance_name}'.")
         return True
 
     def get_screen_quota(
@@ -240,19 +235,17 @@ class MarketCollector:
             if dev in attached and name != self.current_instance
         ]
         for name in candidates:
-            _logger.info("Checking alternative candidate instance '%s'...", name)
+            _logger.debug(f"Checking alternative candidate instance '{name}'...")
             if not self.switch_to_instance(name):
                 continue
             rem = self.get_screen_quota()
             if rem is not None and rem >= required:
                 _logger.info(
-                    "Switched to '%s' with %d/500 live screen quota.", name, rem
+                    f"Switched to '{name}' with {rem}/500 live screen quota."
                 )
                 return True
             _logger.warning(
-                "Candidate '%s' has insufficient screen quota (%s/500).",
-                name,
-                rem,
+                f"Candidate '{name}' has insufficient screen quota ({rem}/500)."
             )
         return False
 
@@ -270,8 +263,7 @@ class MarketCollector:
             if not self.adb.is_auction_open() and not self.adb.is_free_market():
                 if self.auto_bootstrap:
                     _logger.info(
-                        "[%s] Instance neither in Auction nor Free Market. Bootstrapping...",
-                        self.current_instance,
+                        f"[{self.current_instance}] Instance neither in Auction nor Free Market. Bootstrapping..."
                     )
                     from driver.game_bootstrapper import GameBootstrapper
 
@@ -282,15 +274,13 @@ class MarketCollector:
                         clean_reboot=self.clean_reboot
                     ):
                         _logger.error(
-                            "Failed to bootstrap instance '%s' to Free Market.",
-                            self.current_instance,
+                            f"Failed to bootstrap instance '{self.current_instance}' to Free Market."
                         )
                         return False
                 else:
                     _logger.error(
-                        "[%s] Instance is neither in Auction House nor Free Market. "
-                        "Pass --bootstrap to auto-launch and enter Free Market.",
-                        self.current_instance,
+                        f"[{self.current_instance}] Instance is neither in Auction House nor Free Market. "
+                        "Pass --bootstrap to auto-launch and enter Free Market."
                     )
                     return False
 
@@ -298,31 +288,22 @@ class MarketCollector:
                 if self.adb.is_auction_open():
                     rem = self.get_screen_quota()
                     if rem is not None:
-                        _logger.info(
-                            "[%s] Auction House ready (Live screen quota: %d/500).",
-                            self.current_instance,
-                            rem,
+                        _logger.debug(
+                            f"[{self.current_instance}] Auction House ready (Live screen quota: {rem}/500)."
                         )
                     return True
 
-                _logger.info(
-                    "[%s] (%s) opening Auction House (attempt %d/%d)...",
-                    self.current_instance,
-                    self.adb.device_id,
-                    attempt,
-                    max_retries,
+                _logger.debug(
+                    f"[{self.current_instance}] ({self.adb.device_id}) opening Auction House (attempt {attempt}/{max_retries})..."
                 )
                 if self.adb.enter_auction_from_free_market(max_wait_sec=8):
-                    _logger.info(
-                        "Successfully entered Auction House on '%s'.",
-                        self.current_instance,
+                    _logger.debug(
+                        f"Entered Auction House on '{self.current_instance}'."
                     )
                     rem = self.get_screen_quota()
                     if rem is not None:
-                        _logger.info(
-                            "[%s] Live screen quota: %d/500.",
-                            self.current_instance,
-                            rem,
+                        _logger.debug(
+                            f"[{self.current_instance}] Live screen quota: {rem}/500."
                         )
                     return True
 
@@ -330,16 +311,13 @@ class MarketCollector:
                     time.sleep(2.0)
 
             _logger.warning(
-                "[%s] (%s) failed to enter Auction House after %d attempts.",
-                self.current_instance,
-                self.adb.device_id,
-                max_retries,
+                f"[{self.current_instance}] ({self.adb.device_id}) failed to enter Auction House after {max_retries} attempts."
             )
             return False
 
         if not self.win_mgr.find_window():
             _logger.error(
-                "Window for '%s' not detected.", self.current_instance
+                f"Window for '{self.current_instance}' not detected."
             )
             return False
 
@@ -388,13 +366,13 @@ class MarketCollector:
             True on successful submission.
         """
         if not self.is_auction_open():
-            _logger.error("SAFETY GUARD: Auction House closed! Refusing to search.")
+            _logger.error("SAFETY GUARD: Auction House closed. Refusing to search.")
             return False
 
         if self.use_adb and self.adb:
             if reuse_existing:
                 _logger.debug(
-                    "Reusing search bar keyword: '%s' (fast submit)", keyword
+                    f"Reusing search bar keyword: '{keyword}' (fast submit)"
                 )
                 self.adb.tap(POS_QUICK_SEARCH.x, POS_QUICK_SEARCH.y)
                 time.sleep(0.2)
@@ -402,7 +380,7 @@ class MarketCollector:
                 time.sleep(0.4)
                 self.adb.handle_lingering_popups()
             else:
-                _logger.info("Searching for item via ADB: '%s'", keyword)
+                _logger.debug(f"Searching for item via ADB: '{keyword}'")
                 self.adb.tap(POS_QUICK_SEARCH.x, POS_QUICK_SEARCH.y)
                 time.sleep(0.25)
                 self.adb.input_chinese(keyword)
@@ -458,10 +436,7 @@ class MarketCollector:
             curr_p, total_p = pagination
             target_pages = min(total_p, effective_max)
             _logger.debug(
-                "Page 1 Micro-OCR: Detected page %d/%d. Target: %d pages.",
-                curr_p,
-                total_p,
-                target_pages,
+                f"Page 1 Micro-OCR: Detected page {curr_p}/{total_p}. Target: {target_pages} pages."
             )
 
             self.ocr_worker.submit(
@@ -481,7 +456,7 @@ class MarketCollector:
                     frame = self.capture_frame()
                     if not frame:
                         _logger.warning(
-                            "Frame capture empty on page %d.", page_idx
+                            f"Frame capture empty on page {page_idx}."
                         )
                         break
 
@@ -495,7 +470,7 @@ class MarketCollector:
                     )
             else:
                 _logger.debug(
-                    "Single page result (%d/%d).", curr_p, total_p
+                    f"Single page result ({curr_p}/{total_p})."
                 )
 
             self.ocr_worker.wait_all()
@@ -627,18 +602,12 @@ class MarketCollector:
         req_total = 2 if target_tab == "both" else 1
         rem = self.get_screen_quota()
         if rem is not None:
-            _logger.info(
-                "[%s] Live screen quota: %d/500 remaining (need %d).",
-                self.current_instance,
-                rem,
-                req_total,
+            _logger.debug(
+                f"[{self.current_instance}] Live screen quota: {rem}/500 remaining (need {req_total})."
             )
             if rem < req_total:
                 _logger.warning(
-                    "[%s] Quota exhausted on screen (%d < %d).",
-                    self.current_instance,
-                    rem,
-                    req_total,
+                    f"[{self.current_instance}] Quota exhausted on screen ({rem} < {req_total})."
                 )
                 return False
 
@@ -670,12 +639,12 @@ class MarketCollector:
                     self.aggregator.aggregate_item(keyword, timeframe="4h")
                     self.aggregator.aggregate_item(keyword, timeframe="1d")
                 except Exception as err:
-                    _logger.debug("Candle aggregation error for '%s': %s", keyword, err)
+                    _logger.debug(f"Candle aggregation error for '{keyword}': {err}")
 
         try:
             update_item_timestamp(keyword)
         except Exception as err:
-            _logger.debug("Timestamp update error for '%s': %s", keyword, err)
+            _logger.debug(f"Timestamp update error for '{keyword}': {err}")
 
         return True
 
@@ -695,21 +664,16 @@ class MarketCollector:
             start_index: 1-based start index.
         """
         _logger.info(
-            "Starting catalog collection scan for %d items (Mode: '%s', Start: %d)...",
-            len(keywords),
-            target_tab,
-            start_index,
+            f"Starting catalog collection scan for {len(keywords)} items (Mode: '{target_tab}', Start: {start_index})..."
         )
         if not self.ensure_focus():
-            _logger.error("Cannot focus '%s'. Halting scan.", self.current_instance)
+            _logger.error(f"Cannot focus '{self.current_instance}'. Halting scan.")
             return
 
         rem = self.get_screen_quota()
         if rem is not None:
             _logger.info(
-                "[%s] Auction House active. Live quota on screen: %d/500 remaining.",
-                self.current_instance,
-                rem,
+                f"[{self.current_instance}] Auction House active. Live quota on screen: {rem}/500 remaining."
             )
 
         failed_items: List[str] = []
@@ -719,21 +683,14 @@ class MarketCollector:
 
             if not self.is_auction_open():
                 _logger.warning(
-                    "Auction House closed before [%d/%d] ('%s'). Restoring...",
-                    idx,
-                    len(keywords),
-                    item,
+                    f"Auction House closed before [{idx}/{len(keywords)}] ('{item}'). Restoring..."
                 )
                 if not self.ensure_focus():
-                    _logger.error("Failed to restore Auction House! Stopping run.")
+                    _logger.error("Failed to restore Auction House. Stopping run.")
                     break
 
             _logger.info(
-                "--- Processing [%d/%d]: '%s' [Instance: %s] ---",
-                idx,
-                len(keywords),
-                item,
-                self.current_instance,
+                f"[{self.current_instance}] -> Scanning [{idx}/{len(keywords)}]: '{item}'"
             )
             try:
                 ok = self.run_query_collection(
@@ -762,15 +719,14 @@ class MarketCollector:
                             target_tab=target_tab,
                         )
             except Exception as err:
-                _logger.error("Error processing item '%s': %s", item, err)
+                _logger.error(f"Error processing item '{item}': {err}")
                 failed_items.append(item)
             time.sleep(1.5)
 
         # Autonomous retry pass
         if failed_items and self.is_auction_open():
             _logger.info(
-                "=== Autonomous Retry Pass: Re-attempting %d failed items ===",
-                len(failed_items),
+                f"Autonomous Retry Pass: Re-attempting {len(failed_items)} failed items."
             )
             for f_item in failed_items:
                 try:
@@ -780,7 +736,7 @@ class MarketCollector:
                         target_tab=target_tab,
                     )
                 except Exception as err:
-                    _logger.error("Retry failed for '%s': %s", f_item, err)
+                    _logger.error(f"Retry failed for '{f_item}': {err}")
                 time.sleep(2.0)
 
         _logger.info("Catalog collection scan completed.")
@@ -794,6 +750,6 @@ class MarketCollector:
         try:
             self.leave_auction()
         except Exception as err:
-            _logger.debug("Error leaving auction on shutdown: %s", err)
+            _logger.debug(f"Error leaving auction on shutdown: {err}")
         if hasattr(self, "ocr_worker"):
             self.ocr_worker.shutdown()

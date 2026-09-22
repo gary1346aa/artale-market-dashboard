@@ -1,8 +1,8 @@
-"""High-resolution financial candlestick renderer for Artale Market Tracker.
+"""Financial candlestick renderer for Artale Market Tracker.
 
-Renders pixel-perfect 1800x2400 portrait candlestick charts with Google Sans
+Renders 1800x2400 portrait candlestick charts with Google Sans
 typography, Noto Sans TC Chinese rendering, dynamic Y-axis ticks, VWAP curves,
-and anti-aliased UI badges.
+and UI badges.
 """
 
 from datetime import datetime
@@ -86,10 +86,10 @@ def draw_smooth_bubble(
     font_cjk: Optional[ImageFont.FreeTypeFont] = None,
     text_color: Tuple[int, int, int, int] = (255, 255, 255, 255)
 ) -> None:
-    """
-    Renders a silky-smooth anti-aliased rounded rectangle with mathematically centered text.
-    Uses 4x supersampled Lanczos filtering for beautiful corners matching dashboard styling,
-    and pixel-perfect alpha bounding-box centering for all Latin and CJK typography.
+    """Renders an anti-aliased rounded rectangle with centered text.
+
+    Uses 4x supersampling and Lanczos filtering for corners,
+    with bounding-box text centering for Latin and CJK typography.
     """
     bx1, by1, bx2, by2 = [int(round(v)) for v in box]
     w = bx2 - bx1
@@ -97,7 +97,7 @@ def draw_smooth_bubble(
     if w <= 0 or h <= 0:
         return
 
-    # 4x supersampling for ultra-smooth anti-aliased borders
+    # 4x supersampling for anti-aliased borders
     scale = 4
     sw, sh = w * scale, h * scale
     sr = radius * scale
@@ -123,7 +123,7 @@ def draw_smooth_bubble(
 
     img.paste(bubble, (bx1, by1), bubble)
 
-    # Pixel-perfect mathematical text centering
+    # Bounding-box text centering
     if text and font_latin and font_cjk:
         scratch = Image.new("RGBA", (max(w * 2, 600), max(h * 2, 200)), (0, 0, 0, 0))
         sdr = ImageDraw.Draw(scratch)
@@ -564,9 +564,7 @@ def generate_kline_plot_bytes(
     height: int = 2400,
     db_path: Optional[Path] = None
 ) -> bytes:
-    """
-    Generates PNG image bytes in memory without disk I/O, optimized for high-performance HTTP responses.
-    """
+    """Generates PNG image bytes in memory without disk I/O."""
     img = generate_kline_plot(item_name, timeframe=timeframe, width=width, height=height, db_path=db_path)
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)

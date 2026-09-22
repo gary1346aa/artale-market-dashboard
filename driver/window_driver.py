@@ -197,5 +197,5 @@ class WindowManager:
                 "RGB", sct_img.size, sct_img.bgra, "raw", "BGRX"
             )
         except Exception as err:
-            _logger.error("Failed to capture window frame: %s", err)
+            _logger.error(f"Failed to capture window frame: {err}")
             return None

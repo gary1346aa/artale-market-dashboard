@@ -282,5 +282,5 @@ def generate_dashboard_html(
     doc_file.parent.mkdir(parents=True, exist_ok=True)
     doc_file.write_text(final_html, encoding="utf-8")
 
-    _logger.info("Generated Dashboard HTML -> %s and %s", out_file, doc_file)
+    _logger.info(f"Generated dashboard HTML: {out_file} and {doc_file}")
     return out_file

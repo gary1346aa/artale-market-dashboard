@@ -36,7 +36,7 @@ def _load_cooldowns() -> Dict[str, float]:
             with open(AUCTION_COOLDOWN_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
     except Exception as err:
-        _logger.debug("Could not read cooldown file: %s", err)
+        _logger.debug(f"Could not read cooldown file: {err}")
     return {}
 
 
@@ -49,7 +49,7 @@ def _save_cooldown(device_id: str, ts: float) -> None:
         with open(AUCTION_COOLDOWN_FILE, "w", encoding="utf-8") as f:
             json.dump(cds, f, indent=2)
     except Exception as err:
-        _logger.debug("Could not save auction cooldown: %s", err)
+        _logger.debug(f"Could not save auction cooldown: {err}")
 
 
 class AdbDriver:
@@ -97,7 +97,7 @@ class AdbDriver:
                     devs.append(parts[0])
             return devs
         except Exception as err:
-            _logger.error("Error listing attached ADB devices: %s", err)
+            _logger.error(f"Error listing attached ADB devices: {err}")
             return []
 
     def _run_adb(
@@ -118,26 +118,35 @@ class AdbDriver:
             )
         except Exception as err:
             _logger.warning(
-                "Could not auto-enable ADBKeyBoard on %s: %s",
-                self.device_id,
-                err,
+                f"Could not auto-enable ADBKeyBoard on {self.device_id}: {err}"
             )
+
+    def reconnect(self) -> bool:
+        """Resets the ADB transport connection for this device."""
+        try:
+            res = self._run_adb("reconnect")
+            _logger.info(f"[{self.device_id}] Reconnected ADB transport.")
+            return res.returncode == 0
+        except Exception as err:
+            _logger.warning(f"[{self.device_id}] ADB reconnect failed: {err}")
+            return False
 
     def screencap(
         self,
         crop: Optional[Tuple[int, int, int, int]] = None,
         as_jpeg: bool = False,
         jpeg_quality: int = 85,
+        timeout: float = 3.0,
     ) -> Optional[Image.Image]:
-        """Captures display buffer via high-performance raw SurfaceFlinger dump.
+        """Captures display buffer via raw SurfaceFlinger dump.
 
-        Avoids Android-side PNG compression overhead (~3x faster, ~110-125ms).
         If crop is specified, slices the memory buffer directly before PIL instantiation.
 
         Args:
             crop: Optional (x1, y1, x2, y2) bounding box to crop.
             as_jpeg: Whether to compress into JPEG in-memory.
             jpeg_quality: Quality factor for JPEG compression.
+            timeout: Subprocess timeout in seconds.
 
         Returns:
             PIL RGB Image or None on failure.
@@ -147,7 +156,7 @@ class AdbDriver:
                 [self.adb_path, "-s", self.device_id, "exec-out", "screencap"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                timeout=2.0,
+                timeout=timeout,
                 check=False,
             )
             if p.returncode == 0 and p.stdout and len(p.stdout) >= 16:
@@ -183,40 +192,13 @@ class AdbDriver:
                         buf.seek(0)
                         return Image.open(buf)
                     return img
+        except subprocess.TimeoutExpired:
+            _logger.debug(
+                f"ADB raw screencap timed out after {timeout}s on {self.device_id}"
+            )
         except Exception as err:
             _logger.debug(
-                "ADB raw screencap failed on %s: %s", self.device_id, err
-            )
-
-        # Fallback to standard PNG screencap
-        try:
-            p = subprocess.run(
-                [
-                    self.adb_path,
-                    "-s",
-                    self.device_id,
-                    "exec-out",
-                    "screencap",
-                    "-p",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=2.0,
-                check=False,
-            )
-            if p.returncode == 0 and p.stdout:
-                img = Image.open(io.BytesIO(p.stdout)).convert("RGB")
-                if crop:
-                    img = img.crop(crop)
-                if as_jpeg:
-                    buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=jpeg_quality)
-                    buf.seek(0)
-                    return Image.open(buf)
-                return img
-        except Exception as err:
-            _logger.error(
-                "ADB fallback screencap failed on %s: %s", self.device_id, err
+                f"ADB raw screencap failed on {self.device_id}: {err}"
             )
         return None
 
@@ -382,36 +364,32 @@ class AdbDriver:
             return False
 
         if self.is_lobby_dialog_open(frame):
-            _logger.info(
-                "[%s] Dismissing '前往大廳' prompt by tapping [ 否 ]...",
-                self.device_id,
+            _logger.debug(
+                f"[{self.device_id}] Dismissing '前往大廳' prompt by tapping [ 否 ]..."
             )
             self.tap(481, 490)
             time.sleep(0.4)
             return True
 
         if self.is_exit_cooldown_dialog_open(frame):
-            _logger.info(
-                "[%s] Dismissing auction exit cooldown notice...",
-                self.device_id,
+            _logger.debug(
+                f"[{self.device_id}] Dismissing auction exit cooldown notice..."
             )
             self.tap(*POS_CONFIRM_EXIT)
             time.sleep(0.4)
             return True
 
         if self.is_npc_dialog_open(frame):
-            _logger.info(
-                "[%s] Dismissing Free Market NPC dialogue...",
-                self.device_id,
+            _logger.debug(
+                f"[{self.device_id}] Dismissing Free Market NPC dialogue..."
             )
             self.tap(*POS_STOP_DIALOG)
             time.sleep(0.4)
             return True
 
         if self.is_error_modal_open(frame):
-            _logger.info(
-                "[%s] Dismissing warning modal via neutral tap...",
-                self.device_id,
+            _logger.debug(
+                f"[{self.device_id}] Dismissing warning modal via neutral tap..."
             )
             self.tap(640, 420)
             time.sleep(0.4)
@@ -477,7 +455,7 @@ class AdbDriver:
 
             return sum((green_ok, leave_ok, hdr_ok)) >= 2
         except Exception as err:
-            _logger.debug("Error checking is_auction_open: %s", err)
+            _logger.debug(f"Error checking is_auction_open: {err}")
             return False
 
     def is_free_market(
@@ -518,7 +496,7 @@ class AdbDriver:
                     if max_val >= min_confidence:
                         return True
             except Exception as err:
-                _logger.debug("Template match error in is_free_market: %s", err)
+                _logger.debug(f"Template match error in is_free_market: {err}")
 
         # 2. Telemetry pixel fallback
         try:
@@ -530,7 +508,7 @@ class AdbDriver:
             mm_ok = p_mm[0] > 240 and p_mm[1] > 240 and p_mm[2] > 240
             return (hp_ok and mp_ok) or (mm_ok and hp_ok)
         except Exception as err:
-            _logger.debug("Error checking is_free_market: %s", err)
+            _logger.debug(f"Error checking is_free_market: {err}")
             return False
 
     def record_auction_exit(self) -> None:
@@ -538,10 +516,8 @@ class AdbDriver:
         now = time.time()
         _GLOBAL_AUCTION_EXIT_TIMES[self.device_id] = now
         _save_cooldown(self.device_id, now)
-        _logger.info(
-            "[%s] Recorded Auction exit (%.0f). 60s cooldown active.",
-            self.device_id,
-            now,
+        _logger.debug(
+            f"[{self.device_id}] Recorded auction exit ({now:.0f}). Cooldown active."
         )
 
     def get_auction_cooldown_remaining(
@@ -562,8 +538,8 @@ class AdbDriver:
             self.handle_lingering_popups()
             return True
 
-        _logger.info(
-            "[%s] Exiting Auction House to Free Market...", self.device_id
+        _logger.debug(
+            f"[{self.device_id}] Exiting Auction House to Free Market..."
         )
         self.tap(*POS_LEAVE_AUCTION)
         self.record_auction_exit()
@@ -573,8 +549,8 @@ class AdbDriver:
             time.sleep(0.8)
             self.handle_lingering_popups()
             if not self.is_auction_open():
-                _logger.info(
-                    "[%s] Successfully exited Auction House.", self.device_id
+                _logger.debug(
+                    f"[{self.device_id}] Exited Auction House."
                 )
                 return True
         return not self.is_auction_open()
@@ -583,16 +559,14 @@ class AdbDriver:
         """Enters Auction House from Free Market via mobile menu."""
         remaining = self.get_auction_cooldown_remaining()
         if remaining > 0:
-            _logger.info(
-                "[%s] In-game cooldown active. Waiting %.1fs...",
-                self.device_id,
-                remaining,
+            _logger.debug(
+                f"[{self.device_id}] Auction entry cooldown active. Waiting {remaining:.1f}s..."
             )
             time.sleep(remaining)
 
         self.handle_lingering_popups()
-        _logger.info(
-            "[%s] Opening Auction House via Free Market menu...", self.device_id
+        _logger.debug(
+            f"[{self.device_id}] Opening Auction House via Free Market menu..."
         )
         self.tap(*POS_MENU_BUTTON)
         time.sleep(0.7)
@@ -602,16 +576,14 @@ class AdbDriver:
         while time.time() - start_t < max_wait_sec:
             time.sleep(1.0)
             if self.is_auction_open():
-                _logger.info(
-                    "[%s] Auction House opened successfully.", self.device_id
+                _logger.debug(
+                    f"[{self.device_id}] Auction House opened."
                 )
                 return True
             self.handle_lingering_popups()
 
         _logger.warning(
-            "[%s] Auction House did not open within %ds.",
-            self.device_id,
-            max_wait_sec,
+            f"[{self.device_id}] Auction House did not open within {max_wait_sec}s."
         )
         return self.is_auction_open()
 

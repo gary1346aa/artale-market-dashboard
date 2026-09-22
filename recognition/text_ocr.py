@@ -155,7 +155,7 @@ def get_canonical_watchlist(
                         list(raw.keys()) if isinstance(raw, dict) else raw
                     )
             except Exception as err:
-                _logger.warning("Failed to load watchlist for OCR: %s", err)
+                _logger.warning(f"Failed to load watchlist for OCR: {err}")
                 _WATCHLIST_CACHE = []
         else:
             _WATCHLIST_CACHE = []

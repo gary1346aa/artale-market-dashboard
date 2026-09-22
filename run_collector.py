@@ -31,7 +31,7 @@ def parallel_bootstrap_devices(devices: List[str], max_timeout_sec: int = 160) -
     from driver.adb_driver import AdbDriver
     from driver.game_bootstrapper import GameBootstrapper, ScreenState, detect_screen_state
 
-    _logger.info("Initiating parallel Free Market bootstrap for devices: %s", devices)
+    _logger.info(f"Initiating parallel Free Market bootstrap for devices: {devices}")
     healthy_devices: List[str] = []
 
     def _boot_single(dev: str) -> Tuple[str, bool]:
@@ -47,10 +47,10 @@ def parallel_bootstrap_devices(devices: List[str], max_timeout_sec: int = 160) -
         for fut in as_completed(futures):
             dev, ready = fut.result()
             if ready:
-                _logger.info("[%s] Bootstrap SUCCESS -> Device ready for tasks.", dev)
+                _logger.info(f"[{dev}] Bootstrap successful. Device ready.")
                 healthy_devices.append(dev)
             else:
-                _logger.error("[%s] Bootstrap FAILED -> Excluding device from current batch pool.", dev)
+                _logger.error(f"[{dev}] Bootstrap failed. Excluding device from batch pool.")
 
     return healthy_devices
 
@@ -172,16 +172,14 @@ def main() -> None:
             due_items, wait_sec, next_it = wm.get_due_items()
             if not due_items:
                 _logger.info(
-                    "All items up to date. Next due: '%s' in %.1f minutes.",
-                    next_it,
-                    wait_sec / 60.0,
+                    f"All items up to date. Next due: '{next_it}' in {wait_sec / 60.0:.1f} minutes."
                 )
                 return
 
         # 1. Cold-Boot phase
         if args.cold_boot:
             if args.instance:
-                _logger.info("Cold-booting instance '%s'...", args.instance)
+                _logger.info(f"Cold-booting instance '{args.instance}'...")
                 ctrl.launch_instance(args.instance)
             else:
                 _logger.info("Cold-booting all tracker emulators...")
@@ -198,11 +196,11 @@ def main() -> None:
                 attached = AdbDriver.list_attached_devices()
                 target_devs = [d for d in ["emulator-5560", "emulator-5562", "emulator-5568"] if d in attached] or attached
             if not target_devs:
-                _logger.warning("No attached devices found to bootstrap!")
+                _logger.warning("No attached devices found to bootstrap.")
             else:
                 healthy_devices = parallel_bootstrap_devices(target_devs)
                 if not healthy_devices:
-                    _logger.error("No devices successfully reached Free Market! Aborting collection batch.")
+                    _logger.error("No devices reached Free Market. Aborting collection batch.")
                     return
 
         # Helper to select single vs parallel scanner
@@ -257,8 +255,7 @@ def main() -> None:
                     due_items, wait_sec, next_it = wm.get_due_items()
                     if due_items:
                         _logger.info(
-                            "Found %d items currently due. Scanning...",
-                            len(due_items),
+                            f"Found {len(due_items)} items currently due. Scanning..."
                         )
                         scanner = get_scanner()
                         try:
@@ -279,13 +276,11 @@ def main() -> None:
                                 scanner.shutdown()
                     else:
                         _logger.info(
-                            "All items up to date. Next due: '%s' in %.1f min.",
-                            next_it,
-                            wait_sec / 60.0,
+                            f"All items up to date. Next due: '{next_it}' in {wait_sec / 60.0:.1f} min."
                         )
                         time.sleep(min(wait_sec, 60.0))
             else:
-                _logger.info("Found %d items due to update.", len(due_items))
+                _logger.info(f"Found {len(due_items)} items due for update.")
                 scanner = get_scanner()
                 try:
                     if isinstance(scanner, ParallelCollector):
@@ -311,7 +306,7 @@ def main() -> None:
         # 4. Watchlist / Catalog Scan Mode
         wl_path = Path(args.watchlist)
         if not wl_path.exists():
-            _logger.error("Watchlist file '%s' not found.", args.watchlist)
+            _logger.error(f"Watchlist file '{args.watchlist}' not found.")
             return
 
         with open(wl_path, "r", encoding="utf-8") as f:
@@ -325,9 +320,7 @@ def main() -> None:
                     if (v.get("tier", 3) if isinstance(v, dict) else v) == args.tier
                 ]
                 _logger.info(
-                    "Filtered watchlist to Tier %d (%d items).",
-                    args.tier,
-                    len(items),
+                    f"Filtered watchlist to Tier {args.tier} ({len(items)} items)."
                 )
             else:
                 items = list(raw_wl.keys())
@@ -357,7 +350,7 @@ def main() -> None:
     finally:
         if args.kill_after:
             if args.instance:
-                _logger.info("Batch finished. Terminating instance '%s'...", args.instance)
+                _logger.info(f"Batch finished. Terminating instance '{args.instance}'...")
                 ctrl.quit_instance(args.instance)
             else:
                 _logger.info("Batch finished. Terminating emulator instances...")

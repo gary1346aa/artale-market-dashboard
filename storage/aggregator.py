@@ -35,7 +35,7 @@ class KlineAggregator:
     def parse_trade_datetime(
         trade_time_str: str, captured_at_str: str = ""
     ) -> datetime:
-        """Parses trade timestamps from OCR with resilient fallbacks.
+        """Parses trade timestamps from OCR.
 
         Args:
             trade_time_str: Raw trade time string from OCR.

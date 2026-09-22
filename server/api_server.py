@@ -73,8 +73,16 @@ async def handle_kline_image(request: web.Request) -> web.Response:
         )
 
     item_name = urllib.parse.unquote(item_name).strip()
-    width = int(request.query.get("width", 1800))
-    height = int(request.query.get("height", 2400))
+    try:
+        width = int(request.query.get("width", 1800))
+        height = int(request.query.get("height", 2400))
+        if width <= 0 or height <= 0:
+            raise ValueError("Dimensions must be positive")
+    except (ValueError, TypeError):
+        return web.json_response(
+            {"error": "Invalid width or height parameter; must be positive integers."},
+            status=400,
+        )
 
     try:
         png_bytes = await asyncio.to_thread(
@@ -122,6 +130,9 @@ def create_app() -> web.Application:
     app.router.add_get(r"/api/kline/{item_name}/{timeframe:\d+[hd]\.png}", handle_kline_image)
     app.router.add_get(r"/api/kline/{item_name}/{timeframe:\d+[hd]}", handle_kline_image)
     app.router.add_get("/api/kline", handle_kline_image)
+    app.router.add_get(r"/api/snapshot/{item_name}/{timeframe:\d+[hd]\.png}", handle_kline_image)
+    app.router.add_get(r"/api/snapshot/{item_name}/{timeframe:\d+[hd]}", handle_kline_image)
+    app.router.add_get("/api/snapshot", handle_kline_image)
     app.router.add_get("/api/dashboard/data", handle_dashboard_data)
     return app
 

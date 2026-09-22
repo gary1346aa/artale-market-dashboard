@@ -443,8 +443,10 @@ def generate_kline_plot(
     draw.line([(width - axis_width, bar_y2), (width - axis_width, round(1530 * sy))], fill=C_BORDER, width=1)
 
     # Vertical Bounds with Nice Numbers
-    raw_min = low_all * 0.985
-    raw_max = high_all * 1.015
+    chart_low = min(c["low"] for c in candles)
+    chart_high = max(c["high"] for c in candles)
+    raw_min = chart_low * 0.985
+    raw_max = chart_high * 1.015
     if lowest_ask:
         raw_min = min(raw_min, lowest_ask * 0.99)
         raw_max = max(raw_max, lowest_ask * 1.01)

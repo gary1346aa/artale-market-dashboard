@@ -24,9 +24,16 @@ Set-Location "C:\Users\gary1\artale_market_tracker"
 $python = "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe"
 $logFile = "C:\Users\gary1\collector_run.log"
 
-function Write-AppLog([string]$msg, [string]$level = "INFO", [string]$subsystem = "AutoRunner") {
+function Format-Centered([string]$text, [int]$width) {
+    $pad = [Math]::Max(0, $width - $text.Length)
+    $leftPad = [Math]::Floor($pad / 2)
+    $rightPad = $pad - $leftPad
+    return (" " * $leftPad) + $text + (" " * $rightPad)
+}
+
+function Write-AppLog([string]$msg, [string]$level = "INFO", [string]$subsystem = "runner.auto_runner") {
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $lvlStr = $level.PadRight(7)
+    $lvlStr = Format-Centered $level 9
     $subStr = $subsystem.PadRight(32)
     $formatted = "$ts [$lvlStr] [$subStr] $msg"
     $formatted | Out-File $logFile -Append -Encoding utf8
@@ -46,7 +53,7 @@ if (Test-Path "run_config.json") {
         if ($null -ne $cfg.StartIndex -and -not $PSBoundParameters.ContainsKey('StartIndex')) { $StartIndex = $cfg.StartIndex }
         if ($cfg.OneShot) { Remove-Item "run_config.json" -Force }
     } catch {
-        Write-AppLog "Failed to parse run_config.json: $_" "WARNING" "AutoRunner"
+        Write-AppLog "Failed to parse run_config.json: $_" "WARNING" "runner.auto_runner"
     }
 }
 
@@ -133,10 +140,10 @@ function Set-WindowsPowerPlan([string]$planName) {
         }
         if ($targetGuid) {
             powercfg /setactive $targetGuid
-            Write-AppLog "Windows Power Scheme switched to: $planName" "INFO" "PowerScheme"
+            Write-AppLog "Windows Power Scheme switched to: $planName" "INFO" "system.power_scheme"
         }
     } catch {
-        Write-AppLog "Failed to switch Windows Power Scheme to: $planName" "WARNING" "PowerScheme"
+        Write-AppLog "Failed to switch Windows Power Scheme to: $planName" "WARNING" "system.power_scheme"
     }
 }
 
@@ -153,28 +160,28 @@ try {
     }
 
     if ($LASTEXITCODE -ne 0) {
-        Write-AppLog "Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps." "ERROR" "AutoRunner"
+        Write-AppLog "Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps." "ERROR" "runner.auto_runner"
         exit $LASTEXITCODE
     }
 
-    Write-AppLog "Collector completed. Running aggregator..." "INFO" "AutoRunner"
+    Write-AppLog "Collector completed. Running aggregator..." "INFO" "runner.auto_runner"
     & $python -u -m storage.aggregator | Tee-Object -FilePath $logFile -Append
 
-    Write-AppLog "Updating dashboard.html and docs/index.html..." "INFO" "AutoRunner"
+    Write-AppLog "Updating dashboard.html and docs/index.html..." "INFO" "runner.auto_runner"
     & $python -u dashboard.py | Tee-Object -FilePath $logFile -Append
 
     # Automated GitHub Pages sync (if git remote origin is configured)
     $hasRemote = git remote 2>$null
     if ($hasRemote -contains "origin") {
-        Write-AppLog "Syncing docs/index.html to GitHub Pages..." "INFO" "AutoRunner"
+        Write-AppLog "Syncing docs/index.html to GitHub Pages..." "INFO" "runner.auto_runner"
         git add docs/index.html *>> $logFile
         git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))" *>> $logFile
         git push origin master *>> $logFile
     } else {
-        Write-AppLog "GitHub remote not configured; generated locally." "WARNING" "AutoRunner"
+        Write-AppLog "GitHub remote not configured; generated locally." "WARNING" "runner.auto_runner"
     }
 
-    Write-AppLog "All tasks finished successfully!" "INFO" "AutoRunner"
+    Write-AppLog "All tasks finished successfully!" "INFO" "runner.auto_runner"
 } finally {
     if ($AutoPowerSave) {
         # Failsafe: Ensure emulators are terminated even if a script crash occurred

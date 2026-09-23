@@ -80,13 +80,17 @@ def get_display_width(text: str) -> int:
     return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(text))
 
 
-def pad_display_width(text: str, target_width: int = 6, align: str = "left") -> str:
+def pad_display_width(text: str, target_width: int = 6, align: str = "center") -> str:
     """Pads text to target visual display width using ASCII spaces."""
     s = str(text)
     dw = get_display_width(s)
     pad = max(0, target_width - dw)
     if align == "right":
         return (" " * pad) + s
+    if align == "center":
+        left_pad = pad // 2
+        right_pad = pad - left_pad
+        return (" " * left_pad) + s + (" " * right_pad)
     return s + (" " * pad)
 
 
@@ -114,10 +118,18 @@ def get_seconds_until_next_8am(
 # ==============================================================================
 # Logging Configuration
 # ==============================================================================
-def setup_logging(level: int = logging.INFO) -> logging.Logger:
-    """Configures root logger with standardized timestamp, log level, and logger alignment.
+class UniformLogFormatter(logging.Formatter):
+    """Custom formatter centering log levels with a 1-space margin (width 9)."""
 
-    Format: YYYY-MM-DD HH:MM:SS [%(levelname)-7s] [%(name)-32s] %(message)s
+    def format(self, record: logging.LogRecord) -> str:
+        record.centered_level = f"{record.levelname:^9}"
+        return super().format(record)
+
+
+def setup_logging(level: int = logging.INFO) -> logging.Logger:
+    """Configures root logger with standardized timestamp, centered log level, and logger alignment.
+
+    Format: YYYY-MM-DD HH:MM:SS [%(centered_level)s] [%(name)-32s] %(message)s
     """
     if sys.platform == "win32":
         try:
@@ -126,11 +138,16 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
         except Exception:
             pass
 
-    logging.basicConfig(
-        level=level,
-        stream=sys.stdout,
-        format="%(asctime)s [%(levelname)-7s] [%(name)-32s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        force=True,
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        UniformLogFormatter(
+            fmt="%(asctime)s [%(centered_level)s] [%(name)-32s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     )
-    return logging.getLogger()
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+    root.addHandler(handler)
+    return root

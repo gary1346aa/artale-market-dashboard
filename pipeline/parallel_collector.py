@@ -149,7 +149,7 @@ class ParallelCollector:
 
         def worker_thread(inst_name: str, device_id: str) -> None:
             nonlocal completed_count
-            inst_tag = pad_display_width(inst_name, max_inst_w)
+            inst_tag = pad_display_width(inst_name, max_inst_w, align="center")
             _logger.info(
                 f"[{inst_tag}] Starting asynchronous worker pipeline..."
             )
@@ -239,7 +239,7 @@ class ParallelCollector:
                         curr_progress = completed_count
 
                     _logger.info(
-                        f"[{inst_tag}] -> Scanning [{idx:>{w_total}}/{total_total}] (Batch: {curr_progress:>{w_batch}}/{total_items}): '{item}'"
+                        f"[{inst_tag}] Scanning [{idx:>{w_total}}/{total_total}]: '{item}'"
                     )
 
                     try:

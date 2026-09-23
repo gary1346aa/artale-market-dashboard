@@ -16,9 +16,16 @@ $env:PYTHONIOENCODING = 'utf-8'
 
 Add-Type -AssemblyName System.Windows.Forms
 
-function Write-Log([string]$msg, [string]$level = "INFO", [string]$subsystem = "Daemon") {
+function Format-Centered([string]$text, [int]$width) {
+    $pad = [Math]::Max(0, $width - $text.Length)
+    $leftPad = [Math]::Floor($pad / 2)
+    $rightPad = $pad - $leftPad
+    return (" " * $leftPad) + $text + (" " * $rightPad)
+}
+
+function Write-Log([string]$msg, [string]$level = "INFO", [string]$subsystem = "scheduler.prompt_daemon") {
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    $lvlStr = $level.PadRight(7)
+    $lvlStr = Format-Centered $level 9
     $subStr = $subsystem.PadRight(32)
     $formatted = "$ts [$lvlStr] [$subStr] $msg"
     $formatted | Out-File $logFile -Append -Encoding utf8

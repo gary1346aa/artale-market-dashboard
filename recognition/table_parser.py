@@ -443,6 +443,12 @@ class MarketParser:
                     else:
                         trade_time = None
 
+            if not trade_time:
+                self._save_failed_crop(
+                    row_crop, "unparseable_trade_time", row_idx, item_name
+                )
+                continue
+
             trades.append(
                 MatchedTrade(
                     item_name=item_name,

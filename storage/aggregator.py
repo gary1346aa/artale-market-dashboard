@@ -34,17 +34,11 @@ class KlineAggregator:
     @staticmethod
     def parse_trade_datetime(
         trade_time_str: str, captured_at_str: str = ""
-    ) -> datetime:
-        """Parses trade timestamps from OCR.
-
-        Args:
-            trade_time_str: Raw trade time string from OCR.
-            captured_at_str: Fallback ISO string of when screen was captured.
-
-        Returns:
-            Parsed datetime object.
-        """
-        clean_str = trade_time_str.strip()
+    ) -> Optional[datetime]:
+        """Parses trade timestamps from OCR. Returns None if invalid or missing."""
+        clean_str = (trade_time_str or "").strip()
+        if not clean_str:
+            return None
 
         # Full format: 2026-09-12 16:55 or 2026-09-12 16:55:15
         match_full = re.search(
@@ -69,14 +63,7 @@ class KlineAggregator:
             y, m, d = map(int, match_date.groups())
             return datetime(y, m, d, 0, 0)
 
-        # Fallback to captured_at ISO timestamp
-        try:
-            dt = datetime.fromisoformat(captured_at_str)
-            if dt.tzinfo is not None:
-                return dt.astimezone().replace(tzinfo=None)
-            return dt
-        except Exception:
-            return datetime.now()
+        return None
 
     @staticmethod
     def get_bucket_timestamp(dt: datetime, timeframe: str) -> str:
@@ -165,8 +152,8 @@ class KlineAggregator:
             seen_trades.add(trade_key)
 
             trade_dt = self.parse_trade_datetime(raw_time, cap_time)
-            if trade_dt.tzinfo is not None:
-                trade_dt = trade_dt.astimezone().replace(tzinfo=None)
+            if trade_dt is None:
+                continue
             parsed_trades.append({
                 "dt": trade_dt,
                 "unit_price": unit_price,

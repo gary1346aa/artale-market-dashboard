@@ -37,6 +37,11 @@ class TestAggregator(unittest.TestCase):
         dt2 = self.aggregator.parse_trade_datetime("2026-09-19 14:30:15")
         self.assertEqual(dt2.second, 15)
 
+        self.assertIsNone(self.aggregator.parse_trade_datetime(""))
+        self.assertIsNone(self.aggregator.parse_trade_datetime("invalid_date"))
+        self.assertIsNone(self.aggregator.parse_trade_datetime(None))
+        self.assertIsNone(self.aggregator.parse_trade_datetime("", captured_at_str="2026-09-19T14:30:00+00:00"))
+
     def test_get_bucket_timestamp(self):
         """Verify time bucketing for 1h, 4h, and 1d intervals."""
         dt = datetime(2026, 9, 19, 14, 35, 20)
@@ -78,6 +83,20 @@ class TestAggregator(unittest.TestCase):
         self.assertEqual(c.close_price, 11000)
         self.assertEqual(c.volume, 20)  # 5 + 3 + 2 + 10
         self.assertEqual(c.trade_count, 4)
+
+    def test_aggregate_item_ignores_invalid_trade_time(self):
+        """Ensure trades with missing or unparseable trade_time are ignored and don't cause crash."""
+        trades = [
+            MatchedTrade(item_name="魔法水晶", quantity=1, matched_unit_price=5000, total_matched_price=5000, trade_time="2026-09-19 14:05"),
+            MatchedTrade(item_name="魔法水晶", quantity=1, matched_unit_price=5500, total_matched_price=5500, trade_time=None),
+            MatchedTrade(item_name="魔法水晶", quantity=1, matched_unit_price=6000, total_matched_price=6000, trade_time="bad_timestamp"),
+        ]
+        save_matched_trades(trades, db_path=self.db_path)
+
+        candles = self.aggregator.aggregate_item("魔法水晶", timeframe="1h")
+        self.assertEqual(len(candles), 1)
+        self.assertEqual(candles[0].trade_count, 1)
+        self.assertEqual(candles[0].close_price, 5000)
 
 
 if __name__ == "__main__":

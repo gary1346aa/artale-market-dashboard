@@ -31,7 +31,9 @@ def parallel_bootstrap_devices(devices: List[str], max_timeout_sec: int = 160) -
     from driver.adb_driver import AdbDriver
     from driver.game_bootstrapper import GameBootstrapper, ScreenState, detect_screen_state
 
-    _logger.info(f"Initiating parallel Free Market bootstrap for devices: {devices}")
+    from config.settings import DEVICE_INSTANCE_MAP, pad_display_width
+
+    _logger.info(f"Initiating parallel Free Market bootstrap for instances: {[DEVICE_INSTANCE_MAP.get(d, d) for d in devices]}")
     healthy_devices: List[str] = []
 
     def _boot_single(dev: str) -> Tuple[str, bool]:
@@ -46,11 +48,13 @@ def parallel_bootstrap_devices(devices: List[str], max_timeout_sec: int = 160) -
         futures = {executor.submit(_boot_single, d): d for d in devices}
         for fut in as_completed(futures):
             dev, ready = fut.result()
+            inst_name = DEVICE_INSTANCE_MAP.get(dev, dev)
+            tag = pad_display_width(inst_name, 6)
             if ready:
-                _logger.info(f"[{dev}] Bootstrap successful. Device ready.")
+                _logger.info(f"[{tag}] Bootstrap successful. Device ready.")
                 healthy_devices.append(dev)
             else:
-                _logger.error(f"[{dev}] Bootstrap failed. Excluding device from batch pool.")
+                _logger.error(f"[{tag}] Bootstrap failed. Excluding device from batch pool.")
 
     return healthy_devices
 

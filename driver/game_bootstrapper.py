@@ -278,13 +278,13 @@ class GameBootstrapper:
 
     def return_home_and_cleanup(self) -> None:
         """Closes running apps, returns to Android home screen, and dismisses popups."""
-        dev = self.adb.device_id
-        _logger.debug(f"[{dev}] Closing opening apps and returning to home...")
+        tag = self.instance_tag
+        _logger.debug(f"[{tag}] Closing opening apps and returning to home...")
         self.adb._run_adb("shell", "am", "force-stop", MSW_PACKAGE_NAME)
         time.sleep(0.5)
         self.adb.keyevent(3)  # KEYCODE_HOME
         time.sleep(1.0)
-        _logger.debug(f"[{dev}] Sending ESC / BACK events to dismiss home popups...")
+        _logger.debug(f"[{tag}] Sending ESC / BACK events to dismiss home popups...")
         self.adb.send_esc(count=4, delay_sec=0.4)
         time.sleep(0.8)
 

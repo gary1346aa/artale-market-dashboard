@@ -22,7 +22,13 @@ from config.coordinates import (
     POS_MENU_BUTTON,
     POS_STOP_DIALOG,
 )
-from config.settings import ASSETS_DIR, AUCTION_COOLDOWN_FILE, DEFAULT_ADB
+from config.settings import (
+    ASSETS_DIR,
+    AUCTION_COOLDOWN_FILE,
+    DEFAULT_ADB,
+    DEVICE_INSTANCE_MAP,
+    pad_display_width,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -69,6 +75,16 @@ class AdbDriver:
         self.device_id = device_id
         self.adb_path = str(adb_path)
         self._ensure_adb_keyboard()
+
+    @property
+    def display_name(self) -> str:
+        """Human-readable instance name if mapped, else device_id."""
+        return DEVICE_INSTANCE_MAP.get(self.device_id, str(self.device_id))
+
+    @property
+    def instance_tag(self) -> str:
+        """Padded 6-display-width centered instance tag."""
+        return pad_display_width(self.display_name, 6)
 
     @classmethod
     def list_attached_devices(
@@ -118,17 +134,17 @@ class AdbDriver:
             )
         except Exception as err:
             _logger.warning(
-                f"Could not auto-enable ADBKeyBoard on {self.device_id}: {err}"
+                f"[{self.instance_tag}] Could not auto-enable ADBKeyBoard: {err}"
             )
 
     def reconnect(self) -> bool:
         """Resets the ADB transport connection for this device."""
         try:
             res = self._run_adb("reconnect")
-            _logger.info(f"[{self.device_id}] Reconnected ADB transport.")
+            _logger.info(f"[{self.instance_tag}] Reconnected ADB transport.")
             return res.returncode == 0
         except Exception as err:
-            _logger.warning(f"[{self.device_id}] ADB reconnect failed: {err}")
+            _logger.warning(f"[{self.instance_tag}] ADB reconnect failed: {err}")
             return False
 
     def screencap(
@@ -566,7 +582,7 @@ class AdbDriver:
 
         self.handle_lingering_popups()
         _logger.debug(
-            f"[{self.device_id}] Opening Auction House via Free Market menu..."
+            f"[{self.instance_tag}] Opening Auction House via Free Market menu..."
         )
         self.tap(*POS_MENU_BUTTON)
         time.sleep(0.7)
@@ -577,13 +593,13 @@ class AdbDriver:
             time.sleep(1.0)
             if self.is_auction_open():
                 _logger.debug(
-                    f"[{self.device_id}] Auction House opened."
+                    f"[{self.instance_tag}] Auction House opened."
                 )
                 return True
             self.handle_lingering_popups()
 
         _logger.warning(
-            f"[{self.device_id}] Auction House did not open within {max_wait_sec}s."
+            f"[{self.instance_tag}] Auction House did not open within {max_wait_sec}s."
         )
         return self.is_auction_open()
 

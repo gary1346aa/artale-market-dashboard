@@ -31,7 +31,7 @@ from config.coordinates import (
     POS_MSW_SEARCH_INPUT,
     POS_SELECT_CHARACTER_BUTTON,
 )
-from config.settings import ASSETS_DIR, DEVICE_INSTANCE_MAP
+from config.settings import ASSETS_DIR, DEVICE_INSTANCE_MAP, pad_display_width
 from driver.adb_driver import AdbDriver
 from driver.emulator_controller import EmulatorController
 
@@ -237,31 +237,41 @@ class GameBootstrapper:
         self.controller = controller or EmulatorController()
         self.instance_name = instance_name or DEVICE_INSTANCE_MAP.get(adb.device_id)
 
+    @property
+    def display_instance_name(self) -> str:
+        """Returns the human-readable emulator instance name."""
+        return self.instance_name or DEVICE_INSTANCE_MAP.get(self.adb.device_id, str(self.adb.device_id))
+
+    @property
+    def instance_tag(self) -> str:
+        """Returns the 6-display-width padded instance tag."""
+        return pad_display_width(self.display_instance_name, 6)
+
     def restart_instance_clean(self) -> bool:
         """Kills and relaunches the LDPlayer instance to ensure fresh state.
 
         Returns:
             bool: True if instance was successfully restarted and ready, False otherwise.
         """
-        dev = self.adb.device_id
+        tag = self.instance_tag
         if not self.instance_name:
-            _logger.debug(f"[{dev}] No instance_name specified. Falling back to return_home_and_cleanup.")
+            _logger.debug(f"[{tag}] No instance_name specified. Falling back to return_home_and_cleanup.")
             self.return_home_and_cleanup()
             return True
 
-        _logger.info(f"Killing LDPlayer instance '{self.instance_name}' ({dev})...")
+        _logger.info(f"[{tag}] Killing LDPlayer instance '{self.display_instance_name}'...")
         self.controller.quit_instance(self.instance_name)
         time.sleep(2.0)
         self.controller.force_kill_instance(self.instance_name)
         time.sleep(2.0)
 
-        _logger.info(f"Relaunching clean LDPlayer instance '{self.instance_name}'...")
+        _logger.info(f"[{tag}] Relaunching clean LDPlayer instance '{self.display_instance_name}'...")
         if not self.controller.launch_instance(self.instance_name, max_wait_sec=60):
-            _logger.error(f"Failed to relaunch instance '{self.instance_name}'.")
+            _logger.error(f"[{tag}] Failed to relaunch instance '{self.display_instance_name}'.")
             return False
 
         time.sleep(5.0)
-        _logger.debug(f"[{dev}] Sending ESC / BACK events to dismiss home popups...")
+        _logger.debug(f"[{tag}] Sending ESC / BACK events to dismiss home popups...")
         self.adb.send_esc(count=4, delay_sec=0.5)
         time.sleep(1.0)
         return True
@@ -293,8 +303,8 @@ class GameBootstrapper:
         Returns:
             bool: True if successfully confirmed in Free Market, False if timed out.
         """
-        dev = self.adb.device_id
-        _logger.debug(f"[{dev}] Starting reactive closed-loop bootstrap to Free Market...")
+        tag = self.instance_tag
+        _logger.debug(f"[{tag}] Starting reactive closed-loop bootstrap to Free Market...")
 
         # 1. Clean reboot if requested
         if clean_reboot and self.instance_name:
@@ -302,12 +312,12 @@ class GameBootstrapper:
                 return False
         else:
             if self.instance_name and not self.controller.is_running(self.instance_name):
-                _logger.info(f"Instance '{self.instance_name}' not running. Booting...")
+                _logger.info(f"[{tag}] Instance '{self.display_instance_name}' not running. Booting...")
                 if not self.controller.launch_instance(self.instance_name):
                     return False
 
         if self.adb.is_free_market():
-            _logger.debug(f"[{dev}] Already confirmed in Free Market.")
+            _logger.debug(f"[{tag}] Already confirmed in Free Market.")
             return True
 
         start_t = time.time()
@@ -317,14 +327,14 @@ class GameBootstrapper:
         while time.time() - start_t < max_timeout_sec:
             frame = self.adb.screencap()
             state = detect_screen_state(frame)
-            _logger.debug(f"[{dev}] Observed screen state: {state.value}")
+            _logger.debug(f"[{tag}] Observed screen state: {state.value}")
 
             if state != ScreenState.UNKNOWN:
                 consecutive_unknowns = 0
                 consecutive_screencap_fails = 0
 
             if state == ScreenState.STATE_EXIT_MODAL:
-                _logger.debug(f"[{dev}] Detected exit confirmation modal. Clicking [否] to dismiss...")
+                _logger.debug(f"[{tag}] Detected exit confirmation modal. Clicking [否] to dismiss...")
                 self.adb.tap(POS_EXIT_MODAL_CANCEL.x, POS_EXIT_MODAL_CANCEL.y)
                 time.sleep(1.5)
 
@@ -333,30 +343,30 @@ class GameBootstrapper:
                 arr = np.array(frame.convert("RGB"))
                 fm_box = arr[410:485, 1100:1180]
                 if (fm_box > 220).all(axis=2).sum() > 150 and fm_box.mean() < 60:
-                    _logger.debug(f"[{dev}] Closing open menu drawer in Free Market by tapping outside...")
+                    _logger.debug(f"[{tag}] Closing open menu drawer in Free Market by tapping outside...")
                     self.adb.tap(POS_DISMISS_DRAWER.x, POS_DISMISS_DRAWER.y)
                     time.sleep(1.0)
-                _logger.info(f"[{dev}] Reached Free Market.")
+                _logger.info(f"[{tag}] Reached Free Market.")
                 return True
 
             elif state == ScreenState.STATE_HOME:
-                _logger.debug(f"[{dev}] Clearing home popups with ESC and launching MSW...")
+                _logger.debug(f"[{tag}] Clearing home popups with ESC and launching MSW...")
                 self.adb.send_esc(count=2, delay_sec=0.3)
                 time.sleep(0.5)
                 self.adb.tap(POS_HOME_MSW_ICON.x, POS_HOME_MSW_ICON.y)
                 time.sleep(3.0)
 
             elif state == ScreenState.STATE_MSW_LOADING:
-                _logger.debug(f"[{dev}] MapleStory Worlds loading splash. Waiting...")
+                _logger.debug(f"[{tag}] MapleStory Worlds loading splash. Waiting...")
                 time.sleep(3.0)
 
             elif state == ScreenState.STATE_MSW_LOBBY:
-                _logger.debug(f"[{dev}] In MSW lobby. Clicking search icon...")
+                _logger.debug(f"[{tag}] In MSW lobby. Clicking search icon...")
                 self.adb.tap(POS_MSW_SEARCH_BUTTON.x, POS_MSW_SEARCH_BUTTON.y)
                 time.sleep(2.5)
 
             elif state == ScreenState.STATE_MSW_SEARCH:
-                _logger.debug(f"[{dev}] In search view. Focusing input and searching 'Artale'...")
+                _logger.debug(f"[{tag}] In search view. Focusing input and searching 'Artale'...")
                 self.adb.tap(POS_MSW_SEARCH_INPUT.x, POS_MSW_SEARCH_INPUT.y)
                 time.sleep(0.8)
                 self.adb._run_adb("shell", "input", "text", "Artale")
@@ -365,32 +375,32 @@ class GameBootstrapper:
                 time.sleep(3.0)
 
             elif state == ScreenState.STATE_SEARCH_RESULTS:
-                _logger.debug(f"[{dev}] In search results. Dynamically identifying Artale card...")
+                _logger.debug(f"[{tag}] In search results. Dynamically identifying Artale card...")
                 coords = find_artale_card_coordinates(frame)
                 if coords:
                     self.adb.tap(coords[0], coords[1])
                     time.sleep(3.5)
                 else:
-                    _logger.warning(f"[{dev}] Could not locate card via OCR. Retrying in 2s...")
+                    _logger.warning(f"[{tag}] Could not locate card via OCR. Retrying in 2s...")
                     time.sleep(2.0)
 
             elif state == ScreenState.STATE_ARTALE_DETAILS:
-                _logger.debug(f"[{dev}] On Artale details page. Clicking [▶ 遊玩]...")
+                _logger.debug(f"[{tag}] On Artale details page. Clicking [▶ 遊玩]...")
                 self.adb.tap(POS_MSW_PLAY_BUTTON.x, POS_MSW_PLAY_BUTTON.y)
                 time.sleep(5.0)
 
             elif state == ScreenState.STATE_GAME_CONNECTING:
-                _logger.debug(f"[{dev}] Artale connecting / loading assets. Waiting...")
+                _logger.debug(f"[{tag}] Artale connecting / loading assets. Waiting...")
                 time.sleep(3.5)
 
             elif state == ScreenState.STATE_LOGIN_SCREEN:
-                _logger.debug(f"[{dev}] On title login screen. Clicking [登入]...")
+                _logger.debug(f"[{tag}] On title login screen. Clicking [登入]...")
                 self.adb.tap(POS_LOGIN_BUTTON.x, POS_LOGIN_BUTTON.y)
                 time.sleep(4.5)
 
             elif state == ScreenState.STATE_CHAR_SELECT:
                 _logger.debug(
-                    f"[{dev}] On character select screen. Clicking [選擇角色] at ({POS_SELECT_CHARACTER_BUTTON.x}, {POS_SELECT_CHARACTER_BUTTON.y})..."
+                    f"[{tag}] On character select screen. Clicking [選擇角色] at ({POS_SELECT_CHARACTER_BUTTON.x}, {POS_SELECT_CHARACTER_BUTTON.y})..."
                 )
                 self.adb.touch(
                     POS_SELECT_CHARACTER_BUTTON.x,
@@ -400,12 +410,12 @@ class GameBootstrapper:
                 time.sleep(4.0)
 
             elif state == ScreenState.STATE_IN_GAME_WORLD:
-                _logger.debug(f"[{dev}] In-game world HUD active. Clicking [::: MENU]...")
+                _logger.debug(f"[{tag}] In-game world HUD active. Clicking [::: MENU]...")
                 self.adb.tap(POS_MENU_BUTTON.x, POS_MENU_BUTTON.y)
                 time.sleep(2.0)
 
             elif state == ScreenState.STATE_MOBILE_MENU:
-                _logger.debug(f"[{dev}] Mobile menu drawer open. Clicking [自由市場]...")
+                _logger.debug(f"[{tag}] Mobile menu drawer open. Clicking [自由市場]...")
                 self.adb.tap(
                     POS_FREE_MARKET_MENU_BUTTON.x, POS_FREE_MARKET_MENU_BUTTON.y
                 )
@@ -419,7 +429,7 @@ class GameBootstrapper:
                     if backoff_idx < len(SCREENCAP_BACKOFF_SECONDS):
                         wait_sec = SCREENCAP_BACKOFF_SECONDS[backoff_idx]
                         _logger.warning(
-                            f"[{dev}] Screen capture failed (attempt {consecutive_screencap_fails}/{len(SCREENCAP_BACKOFF_SECONDS)}). Backing off {int(wait_sec)}s..."
+                            f"[{tag}] Screen capture failed (attempt {consecutive_screencap_fails}/{len(SCREENCAP_BACKOFF_SECONDS)}). Backing off {int(wait_sec)}s..."
                         )
                         if consecutive_screencap_fails == 2:
                             self.adb.reconnect()
@@ -427,7 +437,7 @@ class GameBootstrapper:
                         continue
                     else:
                         _logger.error(
-                            f"[{dev}] Freeze confirmed after {int(sum(SCREENCAP_BACKOFF_SECONDS))}s backoff (screencap failed {consecutive_screencap_fails} times). Respawning instance '{self.instance_name}'..."
+                            f"[{tag}] Freeze confirmed after {int(sum(SCREENCAP_BACKOFF_SECONDS))}s backoff (screencap failed {consecutive_screencap_fails} times). Respawning instance '{self.display_instance_name}'..."
                         )
                         if self.restart_instance_clean():
                             consecutive_unknowns = 0
@@ -435,13 +445,13 @@ class GameBootstrapper:
                             time.sleep(5.0)
                             continue
                         else:
-                            _logger.error(f"[{dev}] Emergency restart failed.")
+                            _logger.error(f"[{tag}] Emergency restart failed.")
                             return False
                 else:
                     consecutive_screencap_fails = 0
                     if consecutive_unknowns >= MAX_CONSECUTIVE_UNKNOWNS:
                         _logger.error(
-                            f"[{dev}] Freeze detected. In unknown state for {consecutive_unknowns} consecutive cycles. Respawning instance '{self.instance_name}'..."
+                            f"[{tag}] Freeze detected. In unknown state for {consecutive_unknowns} consecutive cycles. Respawning instance '{self.display_instance_name}'..."
                         )
                         if self.restart_instance_clean():
                             consecutive_unknowns = 0
@@ -449,15 +459,15 @@ class GameBootstrapper:
                             time.sleep(5.0)
                             continue
                         else:
-                            _logger.error(f"[{dev}] Emergency restart failed.")
+                            _logger.error(f"[{tag}] Emergency restart failed.")
                             return False
 
                     if consecutive_unknowns == 4:
-                        _logger.warning(f"[{dev}] Stuck in unknown state. Sending ESC to dismiss popup...")
+                        _logger.warning(f"[{tag}] Stuck in unknown state. Sending ESC to dismiss popup...")
                         self.adb.send_esc(count=2, delay_sec=0.5)
                     time.sleep(2.0)
 
-        _logger.error(f"[{dev}] Timed out after {max_timeout_sec}s without reaching Free Market.")
+        _logger.error(f"[{tag}] Timed out after {max_timeout_sec}s without reaching Free Market.")
         return False
 
 

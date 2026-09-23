@@ -15,4 +15,3 @@ from visualization.dashboard_exporter import (
 if __name__ == "__main__":
     setup_logging()
     out = generate_dashboard_html()
-    print(f"Dashboard successfully generated: {out}")

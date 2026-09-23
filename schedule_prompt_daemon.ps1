@@ -16,10 +16,13 @@ $env:PYTHONIOENCODING = 'utf-8'
 
 Add-Type -AssemblyName System.Windows.Forms
 
-function Write-Log([string]$msg) {
+function Write-Log([string]$msg, [string]$level = "INFO", [string]$subsystem = "Daemon") {
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-    "[$ts] $msg" | Out-File $logFile -Append -Encoding utf8
-    Write-Host "[$ts] $msg"
+    $lvlStr = $level.PadRight(7)
+    $subStr = $subsystem.PadRight(32)
+    $formatted = "$ts [$lvlStr] [$subStr] $msg"
+    $formatted | Out-File $logFile -Append -Encoding utf8
+    Write-Host $formatted
 }
 
 function Get-NextStandardTarget([datetime]$baseTime) {

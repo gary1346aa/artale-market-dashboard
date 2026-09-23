@@ -24,6 +24,15 @@ Set-Location "C:\Users\gary1\artale_market_tracker"
 $python = "C:\Users\gary1\AppData\Local\Programs\Python\Python314\python.exe"
 $logFile = "C:\Users\gary1\collector_run.log"
 
+function Write-AppLog([string]$msg, [string]$level = "INFO", [string]$subsystem = "AutoRunner") {
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $lvlStr = $level.PadRight(7)
+    $subStr = $subsystem.PadRight(32)
+    $formatted = "$ts [$lvlStr] [$subStr] $msg"
+    $formatted | Out-File $logFile -Append -Encoding utf8
+    Write-Host $formatted
+}
+
 # Support dynamic config overrides ONLY for unset parameters
 if (Test-Path "run_config.json") {
     try {
@@ -37,7 +46,7 @@ if (Test-Path "run_config.json") {
         if ($null -ne $cfg.StartIndex -and -not $PSBoundParameters.ContainsKey('StartIndex')) { $StartIndex = $cfg.StartIndex }
         if ($cfg.OneShot) { Remove-Item "run_config.json" -Force }
     } catch {
-        "Failed to parse run_config.json: $_" | Out-File $logFile -Append -Encoding utf8
+        Write-AppLog "Failed to parse run_config.json: $_" "WARNING" "AutoRunner"
     }
 }
 
@@ -60,9 +69,7 @@ if (Test-Path "data\market.db") {
 
 $instLabel = if ($Instance -ne "") { " [Instance: $Instance]" } else { " [Instance: Auto-Rotate]" }
 $resumeLabel = if ($StartIndex -gt 1) { " [Resuming from #$StartIndex]" } else { "" }
-$startMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel$resumeLabel..."
-Write-Host $startMsg -ForegroundColor Cyan
-$startMsg | Out-File $logFile -Append -Encoding utf8
+Write-AppLog "Starting collection run for: $Watchlist (Mode: $TargetTab)$instLabel$resumeLabel..." "INFO" "AutoRunner"
 
 if ($Due) {
     try {
@@ -75,10 +82,10 @@ if ($Due) {
         $dueItems = @($dueInfo.due_items)
 
         if ($dueCount -eq 0) {
-            Write-Host "Watchlist Status: 0 of $totalCount items due. All up to date." -ForegroundColor Green
+            Write-AppLog "Watchlist Status: 0 of $totalCount items due. All up to date." "INFO" "AutoRunner"
         } else {
             $sample = if ($dueItems.Count -gt 6) { ($dueItems[0..5] -join ', ') + " (+$(($dueItems.Count - 6)) more)" } else { $dueItems -join ', ' }
-            Write-Host "Watchlist Status: $dueCount of $totalCount item(s) due: [$sample]" -ForegroundColor Cyan
+            Write-AppLog "Watchlist Status: $dueCount of $totalCount item(s) due: [$sample]" "INFO" "AutoRunner"
         }
     } catch {
     }
@@ -126,8 +133,10 @@ function Set-WindowsPowerPlan([string]$planName) {
         }
         if ($targetGuid) {
             powercfg /setactive $targetGuid
+            Write-AppLog "Windows Power Scheme switched to: $planName" "INFO" "PowerScheme"
         }
     } catch {
+        Write-AppLog "Failed to switch Windows Power Scheme to: $planName" "WARNING" "PowerScheme"
     }
 }
 
@@ -144,40 +153,28 @@ try {
     }
 
     if ($LASTEXITCODE -ne 0) {
-        $failMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps."
-        Write-Host $failMsg -ForegroundColor Red
-        $failMsg | Out-File $logFile -Append -Encoding utf8
+        Write-AppLog "Collector failed with exit code $LASTEXITCODE. Aborting subsequent steps." "ERROR" "AutoRunner"
         exit $LASTEXITCODE
     }
 
-    $aggMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Collector completed. Running aggregator..."
-    Write-Host $aggMsg -ForegroundColor Cyan
-    $aggMsg | Out-File $logFile -Append -Encoding utf8
+    Write-AppLog "Collector completed. Running aggregator..." "INFO" "AutoRunner"
     & $python -u -m storage.aggregator | Tee-Object -FilePath $logFile -Append
 
-    $dashMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Updating dashboard.html and docs/index.html..."
-    Write-Host $dashMsg -ForegroundColor Cyan
-    $dashMsg | Out-File $logFile -Append -Encoding utf8
+    Write-AppLog "Updating dashboard.html and docs/index.html..." "INFO" "AutoRunner"
     & $python -u dashboard.py | Tee-Object -FilePath $logFile -Append
 
     # Automated GitHub Pages sync (if git remote origin is configured)
     $hasRemote = git remote 2>$null
     if ($hasRemote -contains "origin") {
-        $syncMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] Syncing docs/index.html to GitHub Pages..."
-        Write-Host $syncMsg -ForegroundColor Green
-        $syncMsg | Out-File $logFile -Append -Encoding utf8
-        git add docs/index.html
-        git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))"
-        git push origin master
+        Write-AppLog "Syncing docs/index.html to GitHub Pages..." "INFO" "AutoRunner"
+        git add docs/index.html *>> $logFile
+        git commit -m "Auto-update market dashboard: $((Get-Date).ToString('yyyy-MM-dd HH:mm'))" *>> $logFile
+        git push origin master *>> $logFile
     } else {
-        $localMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] GitHub remote not configured; generated locally."
-        Write-Host $localMsg -ForegroundColor Yellow
-        $localMsg | Out-File $logFile -Append -Encoding utf8
+        Write-AppLog "GitHub remote not configured; generated locally." "WARNING" "AutoRunner"
     }
 
-    $finishMsg = "[$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))] All tasks finished successfully!"
-    Write-Host $finishMsg -ForegroundColor Green
-    $finishMsg | Out-File $logFile -Append -Encoding utf8
+    Write-AppLog "All tasks finished successfully!" "INFO" "AutoRunner"
 } finally {
     if ($AutoPowerSave) {
         # Failsafe: Ensure emulators are terminated even if a script crash occurred

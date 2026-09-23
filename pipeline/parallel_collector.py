@@ -24,25 +24,16 @@ from pipeline.collector import (
     MarketCollector,
 )
 
-import unicodedata
+from config.settings import (
+    get_display_width,
+    pad_display_width,
+)
 
 _logger = logging.getLogger(__name__)
 
 DEVICE_TO_INSTANCE: Dict[str, str] = {v: k for k, v in INSTANCE_TO_DEVICE.items()}
 DEFAULT_TRACKER_INSTANCES: List[str] = ["槍手", "打火機", "弩手"]
 DEFAULT_TRACKER_DEVICES: List[str] = ["emulator-5560", "emulator-5562", "emulator-5568"]
-
-
-def get_display_width(text: str) -> int:
-    """Calculates display width taking East Asian fullwidth/wide characters into account."""
-    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in text)
-
-
-def pad_display_width(text: str, target_width: int) -> str:
-    """Pads text to target visual width using ASCII spaces."""
-    dw = get_display_width(text)
-    pad = max(0, target_width - dw)
-    return text + (" " * pad)
 
 
 class ParallelCollector:
@@ -153,14 +144,14 @@ class ParallelCollector:
         w_total = len(str(len(keywords)))
         w_batch = len(str(total_items))
         max_inst_w = max(
-            [get_display_width(inst) for inst, _ in self.worker_targets] or [6]
+            [6] + [get_display_width(inst) for inst, _ in self.worker_targets]
         )
 
         def worker_thread(inst_name: str, device_id: str) -> None:
             nonlocal completed_count
             inst_tag = pad_display_width(inst_name, max_inst_w)
             _logger.info(
-                f"[{inst_tag}] Starting asynchronous worker pipeline ({device_id})..."
+                f"[{inst_tag}] Starting asynchronous worker pipeline..."
             )
 
             # 1. Cold boot / Ensure instance is running

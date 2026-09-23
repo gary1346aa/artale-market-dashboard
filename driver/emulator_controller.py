@@ -55,16 +55,16 @@ def resolve_instance_index(instance_name: Union[str, int]) -> int:
         instance_name: Instance name (e.g. '槍手'), numeric string ('3'), or device serial.
 
     Returns:
-        int: LDPlayer numeric index.
+        int: LDPlayer numeric index, or -1 if unresolved.
     """
     key = str(instance_name).strip()
     if key in INSTANCE_INDEX_MAP:
         return INSTANCE_INDEX_MAP[key]
     if key in DEVICE_INSTANCE_MAP:
-        return INSTANCE_INDEX_MAP.get(DEVICE_INSTANCE_MAP[key], 0)
+        return INSTANCE_INDEX_MAP.get(DEVICE_INSTANCE_MAP[key], -1)
     if key.isdigit():
         return int(key)
-    return 0
+    return -1
 
 
 def resolve_device_serial(instance_name: Union[str, int]) -> Optional[str]:
@@ -83,9 +83,10 @@ def resolve_device_serial(instance_name: Union[str, int]) -> Optional[str]:
         return key
 
     idx = resolve_instance_index(key)
-    for name, i in INSTANCE_INDEX_MAP.items():
-        if i == idx and name in INSTANCE_DEVICE_MAP:
-            return INSTANCE_DEVICE_MAP[name]
+    if idx >= 0:
+        for name, i in INSTANCE_INDEX_MAP.items():
+            if i == idx and name in INSTANCE_DEVICE_MAP:
+                return INSTANCE_DEVICE_MAP[name]
     return None
 
 

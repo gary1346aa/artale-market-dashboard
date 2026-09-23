@@ -276,8 +276,9 @@ class KlineAggregator:
 def main() -> None:
     """CLI runner to aggregate all items in watchlist."""
     import json
-    from config.settings import WATCHLIST_PATH
+    from config.settings import WATCHLIST_PATH, setup_logging
 
+    setup_logging()
     if WATCHLIST_PATH.exists():
         with open(WATCHLIST_PATH, "r", encoding="utf-8") as f:
             wl = json.load(f)
@@ -287,7 +288,7 @@ def main() -> None:
 
     agg = KlineAggregator()
     total = agg.aggregate_all_watchlist(targets)
-    print(f"Aggregated {total} candles across {len(targets)} items.")
+    _logger.info(f"Aggregated {total} candles across {len(targets)} items.")
 
 
 if __name__ == "__main__":

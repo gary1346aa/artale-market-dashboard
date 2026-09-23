@@ -59,6 +59,7 @@ INSTANCE_INDEX_MAP: Dict[str, int] = {
 }
 
 INSTANCE_DEVICE_MAP: Dict[str, str] = {
+    "祈禱機": "emulator-5558",
     "槍手": "emulator-5560",
     "打火機": "emulator-5562",
     "弩手": "emulator-5568",
@@ -67,6 +68,27 @@ INSTANCE_DEVICE_MAP: Dict[str, str] = {
 DEVICE_INSTANCE_MAP: Dict[str, str] = {
     device_id: name for name, device_id in INSTANCE_DEVICE_MAP.items()
 }
+
+
+# ==============================================================================
+# East Asian Display Width Utilities
+# ==============================================================================
+def get_display_width(text: str) -> int:
+    """Calculates visual display width taking East Asian fullwidth/wide characters into account."""
+    import unicodedata
+
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in str(text))
+
+
+def pad_display_width(text: str, target_width: int = 6, align: str = "left") -> str:
+    """Pads text to target visual display width using ASCII spaces."""
+    s = str(text)
+    dw = get_display_width(s)
+    pad = max(0, target_width - dw)
+    if align == "right":
+        return (" " * pad) + s
+    return s + (" " * pad)
+
 
 # ==============================================================================
 # Quota Timing Utilities
@@ -93,13 +115,9 @@ def get_seconds_until_next_8am(
 # Logging Configuration
 # ==============================================================================
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
-    """Configures root logger with UTF-8 stdout streaming on Windows.
+    """Configures root logger with standardized timestamp, log level, and logger alignment.
 
-    Args:
-        level: Logging level (e.g. logging.INFO, logging.DEBUG).
-
-    Returns:
-        logging.Logger: The configured root logger instance.
+    Format: YYYY-MM-DD HH:MM:SS [%(levelname)-7s] [%(name)-32s] %(message)s
     """
     if sys.platform == "win32":
         try:
@@ -111,7 +129,8 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
     logging.basicConfig(
         level=level,
         stream=sys.stdout,
-        format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+        format="%(asctime)s [%(levelname)-7s] [%(name)-32s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
         force=True,
     )
     return logging.getLogger()

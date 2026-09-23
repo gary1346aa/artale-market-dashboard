@@ -15,7 +15,7 @@ from config.settings import DB_PATH
 from core.models import Candle
 from storage.database import get_connection, save_kline_candles
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger("storage.aggregator")
 
 
 class KlineAggregator:
@@ -71,7 +71,10 @@ class KlineAggregator:
 
         # Fallback to captured_at ISO timestamp
         try:
-            return datetime.fromisoformat(captured_at_str)
+            dt = datetime.fromisoformat(captured_at_str)
+            if dt.tzinfo is not None:
+                return dt.astimezone().replace(tzinfo=None)
+            return dt
         except Exception:
             return datetime.now()
 
@@ -162,6 +165,8 @@ class KlineAggregator:
             seen_trades.add(trade_key)
 
             trade_dt = self.parse_trade_datetime(raw_time, cap_time)
+            if trade_dt.tzinfo is not None:
+                trade_dt = trade_dt.astimezone().replace(tzinfo=None)
             parsed_trades.append({
                 "dt": trade_dt,
                 "unit_price": unit_price,

@@ -202,6 +202,8 @@ class WatchlistManager:
             return None
         try:
             dt = datetime.fromisoformat(ts_str)
+            if dt.tzinfo is not None:
+                dt = dt.astimezone().replace(tzinfo=None)
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             return str(ts_str)[:19].replace("T", " ")
@@ -289,6 +291,8 @@ class WatchlistManager:
             except Exception:
                 try:
                     dt = datetime.fromisoformat(last_str)
+                    if dt.tzinfo is not None:
+                        dt = dt.astimezone().replace(tzinfo=None)
                 except Exception:
                     due_items.append(item)
                     continue

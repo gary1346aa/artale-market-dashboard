@@ -25,6 +25,7 @@ from config.settings import (
     DEVICE_INSTANCE_MAP,
     INSTANCE_DEVICE_MAP,
     INSTANCE_INDEX_MAP,
+    pad_display_width,
 )
 
 _logger = logging.getLogger(__name__)
@@ -88,6 +89,27 @@ def resolve_device_serial(instance_name: Union[str, int]) -> Optional[str]:
             if i == idx and name in INSTANCE_DEVICE_MAP:
                 return INSTANCE_DEVICE_MAP[name]
     return None
+
+
+def resolve_instance_display_name(instance_name: Union[str, int]) -> str:
+    """Resolves an instance identifier to its human-readable name."""
+    key = str(instance_name).strip()
+    if key in INSTANCE_INDEX_MAP:
+        return key
+    if key in DEVICE_INSTANCE_MAP:
+        return DEVICE_INSTANCE_MAP[key]
+    idx = resolve_instance_index(key)
+    if idx >= 0:
+        for name, i in INSTANCE_INDEX_MAP.items():
+            if i == idx:
+                return name
+    return key
+
+
+def get_instance_tag(instance_name: Union[str, int]) -> str:
+    """Returns a 6-display-width centered instance tag."""
+    name = resolve_instance_display_name(instance_name)
+    return pad_display_width(name, 6)
 
 
 class EmulatorController:
@@ -287,12 +309,14 @@ class EmulatorController:
         Returns:
             bool: True if launch was dispatched, False on error.
         """
+        tag = get_instance_tag(instance_name)
+        disp_name = resolve_instance_display_name(instance_name)
         if self.is_running(instance_name):
-            _logger.info(f"Instance '{instance_name}' is already running.")
+            _logger.info(f"[{tag}] Instance is already running.")
             return True
 
         self.sanitize_com_service()
-        _logger.info(f"Triggering boot for LDPlayer instance '{instance_name}'...")
+        _logger.info(f"[{tag}] Triggering boot for LDPlayer instance '{disp_name}'...")
         idx = resolve_instance_index(instance_name)
 
         try:
@@ -312,7 +336,7 @@ class EmulatorController:
                 )
             return True
         except Exception as err:
-            _logger.error(f"Launch trigger error for '{instance_name}': {err}")
+            _logger.error(f"[{tag}] Launch trigger error for '{disp_name}': {err}")
             return False
 
     def wait_for_ready(
@@ -327,18 +351,20 @@ class EmulatorController:
         Returns:
             bool: True if instance is running and stabilized, False if timed out.
         """
+        tag = get_instance_tag(instance_name)
+        disp_name = resolve_instance_display_name(instance_name)
         start_t = time.time()
         while time.time() - start_t < max_wait_sec:
             self.check_and_dismiss_error_dialogs()
             if self.is_running(instance_name):
                 _logger.info(
-                    f"Instance '{instance_name}' running. Waiting 15s for OS to settle..."
+                    f"[{tag}] Running. Waiting 15s for OS to settle..."
                 )
                 time.sleep(15)
                 return True
             time.sleep(2)
 
-        _logger.error(f"Timed out waiting for '{instance_name}' to boot.")
+        _logger.error(f"[{tag}] Timed out waiting for '{disp_name}' to boot.")
         return False
 
     def launch_instance(
@@ -353,8 +379,9 @@ class EmulatorController:
         Returns:
             bool: True if successfully booted, False if timed out.
         """
+        tag = get_instance_tag(instance_name)
         if self.is_running(instance_name):
-            _logger.info(f"Instance '{instance_name}' is already running.")
+            _logger.info(f"[{tag}] Instance is already running.")
             return True
 
         if not self.trigger_launch(instance_name):
@@ -397,7 +424,9 @@ class EmulatorController:
             )
             return True
         except Exception as err:
-            _logger.error(f"Error quitting instance '{instance_name}': {err}")
+            tag = get_instance_tag(instance_name)
+            disp_name = resolve_instance_display_name(instance_name)
+            _logger.error(f"[{tag}] Error quitting instance '{disp_name}': {err}")
             return False
 
     def force_kill_instance(self, instance_name: str) -> None:
@@ -421,7 +450,9 @@ class EmulatorController:
             )
             subprocess.run(["powershell", "-NoProfile", "-Command", cmd_vbox], capture_output=True, check=False)
         except Exception as err:
-            _logger.debug(f"Force kill error for instance {instance_name}: {err}")
+            tag = get_instance_tag(instance_name)
+            disp_name = resolve_instance_display_name(instance_name)
+            _logger.debug(f"[{tag}] Force kill error for instance '{disp_name}': {err}")
 
     def quit_all(self) -> bool:
         """Terminates all running LDPlayer instances.

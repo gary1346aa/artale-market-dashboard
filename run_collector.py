@@ -19,7 +19,7 @@ from driver.window_driver import WindowManager, WindowSelector
 from pipeline.collector import MarketCollector
 from pipeline.parallel_collector import ParallelCollector
 
-_logger = logging.getLogger("ArtaleCollector")
+_logger = logging.getLogger("pipeline.run_collector")
 
 
 def parallel_bootstrap_devices(devices: List[str], max_timeout_sec: int = 160) -> List[str]:

@@ -194,6 +194,56 @@ class TestGameBootstrapper(unittest.TestCase):
         all_logs = [str(call) for call in mock_logger.mock_calls if "Unknown screen state" in str(call)]
         self.assertEqual(all_logs, [])
 
+    @patch("time.sleep")
+    def test_respawn_resets_timeout_timer(self, mock_sleep):
+        """Verifies that respawning an instance resets start_t so bootstrap doesn't prematurely time out."""
+        from driver.game_bootstrapper import ScreenState
+
+        mock_adb = MagicMock()
+        mock_adb.is_free_market.return_value = False
+        frame = Image.new("RGB", (720, 1280))
+        mock_adb.screencap.return_value = frame
+
+        mock_ctrl = MagicMock()
+        bootstrapper = GameBootstrapper(mock_adb, controller=mock_ctrl, instance_name="弩手")
+
+        # Simulate time progression:
+        # T=1000: start_t initialized
+        # T=1005..1040: 8 unknown cycles to trigger respawn
+        # T=1055: inside respawn, start_t should be reset to 1055
+        # T=1060: next cycle, elapsed from 1055 is only 5s (well within max_timeout_sec=60)
+        # Without reset: 1060 - 1000 = 60s -> would time out!
+        times = [
+            1000.0,  # initial start_t
+            1010.0,  # iteration 1 check (unknown 1)
+            1020.0,  # iteration 2 check (unknown 2)
+            1030.0,  # iteration 3 check (unknown 3 -> triggers respawn)
+            1070.0,  # inside respawn: reset start_t = 1070.0
+            1075.0,  # iteration 4 check: 1075 - 1070 = 5s (without reset: 1075 - 1000 = 75s > 60s)
+        ]
+        time_iter = iter(times)
+
+        def mock_time():
+            try:
+                return next(time_iter)
+            except StopIteration:
+                return 2000.0
+
+        states = [
+            ScreenState.UNKNOWN,
+            ScreenState.UNKNOWN,
+            ScreenState.UNKNOWN,
+            ScreenState.STATE_FREE_MARKET,
+        ]
+
+        with patch("driver.game_bootstrapper.MAX_CONSECUTIVE_UNKNOWNS", 3), \
+             patch("time.time", side_effect=mock_time), \
+             patch("driver.game_bootstrapper.detect_screen_state", side_effect=states), \
+             patch.object(bootstrapper, "restart_instance_clean", return_value=True) as mock_restart:
+            res = bootstrapper.bootstrap_to_free_market(max_timeout_sec=60)
+            self.assertTrue(res)
+            mock_restart.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

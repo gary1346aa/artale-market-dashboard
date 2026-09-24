@@ -442,6 +442,10 @@ class GameBootstrapper:
                         if self.restart_instance_clean():
                             consecutive_unknowns = 0
                             consecutive_screencap_fails = 0
+                            start_t = time.time()
+                            _logger.info(
+                                f"[{tag}] Instance respawned successfully. Resetting bootstrap timeout ({max_timeout_sec}s)..."
+                            )
                             time.sleep(5.0)
                             continue
                         else:
@@ -456,6 +460,10 @@ class GameBootstrapper:
                         if self.restart_instance_clean():
                             consecutive_unknowns = 0
                             consecutive_screencap_fails = 0
+                            start_t = time.time()
+                            _logger.info(
+                                f"[{tag}] Instance respawned successfully. Resetting bootstrap timeout ({max_timeout_sec}s)..."
+                            )
                             time.sleep(5.0)
                             continue
                         else:

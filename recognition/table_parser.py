@@ -22,7 +22,6 @@ from core.models import ActiveListing, MatchedTrade
 from recognition.digit_engine import parse_price_cell, parse_timestamp_cell
 from recognition.text_ocr import (
     extract_number,
-    get_canonical_watchlist,
     normalize_item_name,
     ocr_image,
 )
@@ -176,30 +175,7 @@ class MarketParser:
             item_name = normalize_item_name(raw_name)
 
             if self.expected_item_name:
-                canonical = get_canonical_watchlist()
-                if item_name and len(item_name) >= 2:
-                    if item_name in canonical and item_name != self.expected_item_name:
-                        _logger.warning(
-                            f"Item name mismatch in row {row_idx}: OCR='{item_name}' (distinct item), expected='{self.expected_item_name}'. Skipping row."
-                        )
-                        continue
-
-                    if (
-                        item_name == self.expected_item_name
-                        or self.expected_item_name in item_name
-                        or item_name in self.expected_item_name
-                    ):
-                        item_name = self.expected_item_name
-                    else:
-                        _logger.warning(
-                            f"Item name mismatch in row {row_idx}: OCR='{item_name}', expected='{self.expected_item_name}'. Skipping row."
-                        )
-                        continue
-                else:
-                    if self.expected_item_name in canonical:
-                        item_name = self.expected_item_name
-                    else:
-                        continue
+                item_name = self.expected_item_name
             elif not item_name or len(item_name) < 2:
                 continue
 
@@ -323,30 +299,7 @@ class MarketParser:
             item_name = normalize_item_name(raw_name)
 
             if self.expected_item_name:
-                canonical = get_canonical_watchlist()
-                if item_name and len(item_name) >= 2:
-                    if item_name in canonical and item_name != self.expected_item_name:
-                        _logger.warning(
-                            f"Item name mismatch in row {row_idx}: OCR='{item_name}' (distinct item), expected='{self.expected_item_name}'. Skipping row."
-                        )
-                        continue
-
-                    if (
-                        item_name == self.expected_item_name
-                        or self.expected_item_name in item_name
-                        or item_name in self.expected_item_name
-                    ):
-                        item_name = self.expected_item_name
-                    else:
-                        _logger.warning(
-                            f"Item name mismatch in row {row_idx}: OCR='{item_name}', expected='{self.expected_item_name}'. Skipping row."
-                        )
-                        continue
-                else:
-                    if self.expected_item_name in canonical:
-                        item_name = self.expected_item_name
-                    else:
-                        continue
+                item_name = self.expected_item_name
             elif not item_name or len(item_name) < 2:
                 continue
 

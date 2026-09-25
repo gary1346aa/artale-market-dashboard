@@ -11,6 +11,7 @@ import subprocess
 import time
 from typing import Dict, List, Optional
 
+import numpy as np
 from PIL import Image
 
 from config.coordinates import (
@@ -34,6 +35,11 @@ from driver.window_driver import WindowManager
 from pipeline.async_worker import AsyncOcrWorker
 from recognition.digit_engine import parse_quota_header
 from recognition.table_parser import MarketParser
+from recognition.text_ocr import (
+    get_canonical_watchlist,
+    normalize_item_name,
+    ocr_image,
+)
 from storage.aggregator import KlineAggregator
 from storage.database import init_db, save_active_listings, save_matched_trades
 
@@ -167,6 +173,7 @@ class MarketCollector:
         else:
             self.adb = None
 
+        self._last_searched_keyword: Optional[str] = None
         init_db()
 
     def capture_frame(self) -> Optional[Image.Image]:
@@ -174,6 +181,14 @@ class MarketCollector:
         if self.use_adb and self.adb:
             return self.adb.screencap()
         return self.win_mgr.capture_frame() if self.win_mgr else None
+
+    def capture_search_box(self) -> Optional[Image.Image]:
+        """Captures quick search box crop."""
+        crop_box = (215, 25, 450, 55)
+        if self.use_adb and self.adb:
+            return self.adb.screencap(crop=crop_box)
+        frame = self.capture_frame()
+        return frame.crop(crop_box) if frame else None
 
     def switch_to_instance(self, instance_name: str) -> bool:
         """Switches active tracker to another LDPlayer instance.
@@ -195,6 +210,7 @@ class MarketCollector:
             self.win_mgr = WindowManager(title_keywords=[instance_name])
 
         self.ensure_focus()
+        self._last_searched_keyword = None
         _logger.debug(f"Switched successfully to '{instance_name}'.")
         return True
 
@@ -379,18 +395,59 @@ class MarketCollector:
                 self.adb.press_enter()
                 time.sleep(0.4)
                 self.adb.handle_lingering_popups()
-            else:
-                _logger.debug(f"Searching for item via ADB: '{keyword}'")
+                time.sleep(0.2)
+                return True
+
+            _logger.debug(f"Searching for item via ADB: '{keyword}'")
+            sb_before = self.capture_search_box()
+
+            for attempt in range(2):
                 self.adb.tap(POS_QUICK_SEARCH.x, POS_QUICK_SEARCH.y)
                 time.sleep(0.25)
                 self.adb.input_chinese(keyword)
                 time.sleep(0.15)
+
+                sb_after = self.capture_search_box()
+                if sb_before and sb_after and self._last_searched_keyword != keyword:
+                    arr_before = np.array(sb_before.convert("L")).astype(float)
+                    arr_after = np.array(sb_after.convert("L")).astype(float)
+                    if arr_before.shape == arr_after.shape:
+                        diff = float(np.mean(np.abs(arr_before - arr_after)))
+                        if diff < 0.5:
+                            _logger.warning(
+                                f"Search box unchanged after typing '{keyword}' (pixel diff={diff:.2f}, attempt {attempt + 1}/2). Re-focusing and re-typing..."
+                            )
+                            self.adb.tap(POS_QUICK_SEARCH.x, POS_QUICK_SEARCH.y)
+                            time.sleep(0.2)
+                            continue
+
+                if sb_after:
+                    sb_3x = sb_after.resize(
+                        (sb_after.width * 3, sb_after.height * 3),
+                        Image.Resampling.BICUBIC,
+                    )
+                    txt = ocr_image(sb_3x, lang="zh-Hant-TW")
+                    norm = normalize_item_name(txt)
+                    canonical = get_canonical_watchlist()
+                    if norm and norm in canonical and norm != keyword:
+                        _logger.warning(
+                            f"Search box stuck on distinct item '{norm}' instead of '{keyword}' (attempt {attempt + 1}/2). Re-focusing and re-typing..."
+                        )
+                        self.adb.tap(POS_QUICK_SEARCH.x, POS_QUICK_SEARCH.y)
+                        time.sleep(0.2)
+                        continue
+
                 self.adb.press_enter()
                 time.sleep(0.4)
                 self.adb.handle_lingering_popups()
-            time.sleep(0.2)
-            return True
-        return False
+                self._last_searched_keyword = keyword
+                time.sleep(0.2)
+                return True
+
+            _logger.error(
+                f"Failed to set search box to '{keyword}' after retries. Aborting search."
+            )
+            return False
 
     def paginate_and_scrape(
         self,

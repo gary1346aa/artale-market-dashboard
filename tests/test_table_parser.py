@@ -31,6 +31,12 @@ class TestTableParser(unittest.TestCase):
         listings = parser.parse_active_listings()
         self.assertEqual(listings, [])
 
+    def test_expected_item_name_assigned(self):
+        """Verify parser uses expected_item_name without skipping rows."""
+        img = Image.new("RGB", (1280, 720), (30, 30, 30))
+        parser = MarketParser(img, item_name="智慧水晶")
+        self.assertEqual(parser.expected_item_name, "智慧水晶")
+
 
 if __name__ == "__main__":
     unittest.main()
